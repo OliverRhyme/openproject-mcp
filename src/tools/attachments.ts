@@ -126,10 +126,14 @@ export function registerAttachmentTools(server: McpServer, client: OpenProjectCl
           return json(raw ? data : summarizeAttachment(data));
         }
 
-        const downloadUrl = pickLink(data, 'downloadLocation')?.href;
-        if (!downloadUrl) {
+        const rawHref = pickLink(data, 'downloadLocation')?.href;
+        if (!rawHref) {
           throw new Error('No download URL available for this attachment');
         }
+
+        const downloadUrl = rawHref.startsWith('http')
+          ? rawHref
+          : `${client.baseUrl}${rawHref}`;
 
         const auth = Buffer.from(`apikey:${client.apiKey}`).toString('base64');
         const res = await fetch(downloadUrl, {

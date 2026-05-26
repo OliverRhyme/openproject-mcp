@@ -48,6 +48,10 @@ export class OpenProjectClient {
     return this.config.apiKey;
   }
 
+  get baseUrl(): string {
+    return this.config.baseUrl;
+  }
+
   async get<T = unknown>(path: string, params?: ListParams): Promise<T> {
     const url = this.buildUrl(path, params);
     return this.request<T>('GET', url);

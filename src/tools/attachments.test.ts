@@ -169,6 +169,54 @@ describe('registerAttachmentTools', () => {
     await fs.rm(tmpDir, { recursive: true });
   });
 
+  test('op_get_attachment with saveTo resolves relative downloadLocation href', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-test-'));
+    const savePath = path.join(tmpDir, 'downloaded.png');
+
+    const relativeHal = {
+      ...attachmentHal,
+      _links: {
+        ...attachmentHal._links,
+        downloadLocation: { href: '/api/v3/attachments/5/content' },
+      },
+    };
+
+    let callCount = 0;
+    const fetchMock = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve({
+          ok: true, status: 200,
+          text: () => Promise.resolve(JSON.stringify(relativeHal)),
+        });
+      }
+      if (callCount === 2) {
+        return Promise.resolve({
+          ok: true, status: 200,
+          arrayBuffer: () => Promise.resolve(new Uint8Array([1, 2, 3]).buffer),
+          text: () => Promise.resolve(''),
+        });
+      }
+      // container + activities lookups
+      return Promise.resolve({
+        ok: true, status: 200,
+        text: () => Promise.resolve(JSON.stringify({
+          _embedded: { elements: [] },
+          description: { raw: '' },
+          _links: {},
+        })),
+      });
+    });
+    globalThis.fetch = fetchMock;
+    const server = makeServer();
+    await callTool(server, 'op_get_attachment', { id: 5, saveTo: savePath });
+
+    const downloadCallUrl = fetchMock.mock.calls[1]![0] as string;
+    expect(downloadCallUrl).toBe('https://op.example.com/api/v3/attachments/5/content');
+
+    await fs.rm(tmpDir, { recursive: true });
+  });
+
   test('op_get_attachment with saveTo returns error when download URL missing', async () => {
     const noDownloadHal = {
       ...attachmentHal,

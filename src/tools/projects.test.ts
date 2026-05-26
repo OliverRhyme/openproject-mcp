@@ -204,4 +204,115 @@ describe('registerProjectTools', () => {
     const result = await callTool(server, 'op_list_projects');
     expect(result.isError).toBe(true);
   });
+
+  test('registers op_count_projects tool', () => {
+    const server = makeServer();
+    const tools = getTools(server);
+    expect('op_count_projects' in tools).toBe(true);
+  });
+
+  test('op_list_projects truncates long descriptions to 200 chars', async () => {
+    const longDesc = 'a'.repeat(500);
+    globalThis.fetch = mockFetch(200, {
+      total: 1, count: 1, pageSize: 25, offset: 1,
+      _embedded: {
+        elements: [{
+          id: 1, name: 'Test', identifier: 'test',
+          description: { raw: longDesc },
+          active: true, public: false,
+          createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-02T00:00:00Z',
+          _links: { parent: {}, status: {} },
+        }],
+      },
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_list_projects');
+    const data = JSON.parse(result.content[0].text);
+    const desc = data.elements[0].description as string;
+    expect(desc.length).toBe(201); // 200 + '…'
+    expect(desc.endsWith('…')).toBe(true);
+  });
+
+  test('op_list_projects does not truncate short descriptions', async () => {
+    globalThis.fetch = mockFetch(200, {
+      total: 1, count: 1, pageSize: 25, offset: 1,
+      _embedded: {
+        elements: [{
+          id: 1, name: 'Test', identifier: 'test',
+          description: { raw: 'Short' },
+          active: true, public: false,
+          createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-02T00:00:00Z',
+          _links: { parent: {}, status: {} },
+        }],
+      },
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_list_projects');
+    const data = JSON.parse(result.content[0].text);
+    expect(data.elements[0].description).toBe('Short');
+  });
+
+  test('op_list_projects respects fields parameter', async () => {
+    globalThis.fetch = mockFetch(200, {
+      total: 1, count: 1, pageSize: 25, offset: 1,
+      _embedded: {
+        elements: [{
+          id: 5, name: 'Alpha', identifier: 'alpha',
+          description: { raw: 'Test' },
+          active: true, public: false,
+          createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-02T00:00:00Z',
+          _links: { parent: {}, status: {} },
+        }],
+      },
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_list_projects', {
+      fields: ['id', 'name'],
+    });
+    const data = JSON.parse(result.content[0].text);
+    const el = data.elements[0];
+    expect(Object.keys(el)).toEqual(['id', 'name']);
+    expect(el.id).toBe(5);
+    expect(el.name).toBe('Alpha');
+  });
+
+  test('op_list_projects includes hasMore in pagination', async () => {
+    globalThis.fetch = mockFetch(200, {
+      total: 50, count: 25, pageSize: 25, offset: 1,
+      _embedded: { elements: [] },
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_list_projects');
+    const data = JSON.parse(result.content[0].text);
+    expect(data.hasMore).toBe(true);
+  });
+
+  test('op_count_projects returns only total count', async () => {
+    const fetchMock = mockFetch(200, {
+      total: 42, count: 1, pageSize: 1, offset: 1,
+      _embedded: { elements: [] },
+    });
+    globalThis.fetch = fetchMock;
+    const server = makeServer();
+    const result = await callTool(server, 'op_count_projects');
+    const data = JSON.parse(result.content[0].text);
+    expect(data).toEqual({ total: 42 });
+    const url = fetchMock.mock.calls[0]![0] as string;
+    expect(url).toContain('pageSize=1');
+  });
+
+  test('op_count_projects passes filters through', async () => {
+    const fetchMock = mockFetch(200, {
+      total: 5, count: 1, pageSize: 1, offset: 1,
+      _embedded: { elements: [] },
+    });
+    globalThis.fetch = fetchMock;
+    const server = makeServer();
+    await callTool(server, 'op_count_projects', {
+      filters: [{ field: 'active', operator: '=', values: ['true'] }],
+    });
+    const url = fetchMock.mock.calls[0]![0] as string;
+    expect(url).toContain('filters=');
+    expect(url).toContain('active');
+  });
 });

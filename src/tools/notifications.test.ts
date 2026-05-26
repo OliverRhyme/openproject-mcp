@@ -119,4 +119,20 @@ describe('registerNotificationTools', () => {
     expect(url).toContain('/notifications/read_ian');
     expect(fetchMock.mock.calls[0]![1].method).toBe('POST');
   });
+
+  test('op_list_notifications respects fields parameter', async () => {
+    globalThis.fetch = mockFetch(200, {
+      total: 1, count: 1, pageSize: 25, offset: 1,
+      _embedded: { elements: [notificationHal] },
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_list_notifications', {
+      fields: ['id', 'reason'],
+    });
+    const data = JSON.parse(result.content[0].text);
+    const el = data.elements[0];
+    expect(Object.keys(el)).toEqual(['id', 'reason']);
+    expect(el.id).toBe(77);
+    expect(el.reason).toBe('assigned');
+  });
 });

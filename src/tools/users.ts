@@ -4,6 +4,7 @@ import { OpenProjectClient, type Filter } from '../client.js';
 import {
   extractElements,
   paginationMeta,
+  pickFields,
   summarizeUser,
   type HalCollection,
   type HalResource,
@@ -46,11 +47,12 @@ export function registerUserTools(server: McpServer, client: OpenProjectClient) 
         filters: filterSchema,
         sortBy: z.array(z.tuple([z.string(), z.enum(['asc', 'desc'])])).optional(),
         offset: z.number().int().positive().optional(),
-        pageSize: z.number().int().positive().max(1000).optional(),
+        pageSize: z.number().int().positive().max(100).optional().describe('Max 100'),
+        fields: z.array(z.string()).optional().describe('Return only these fields per element, e.g. ["id","name","email"]'),
         raw: z.boolean().optional(),
       },
     },
-    async ({ filters, sortBy, offset, pageSize, raw }) =>
+    async ({ filters, sortBy, offset, pageSize, fields, raw }) =>
       tryTool(async () => {
         const data = await client.get<HalCollection>('/users', {
           filters: filters as Filter[] | undefined,
@@ -61,7 +63,7 @@ export function registerUserTools(server: McpServer, client: OpenProjectClient) 
         if (raw) return json(data);
         return json({
           ...paginationMeta(data),
-          elements: extractElements(data).map(summarizeUser),
+          elements: extractElements(data).map((u) => pickFields(summarizeUser(u), fields)),
         });
       }),
   );

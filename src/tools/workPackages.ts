@@ -4,7 +4,9 @@ import { OpenProjectClient, type Filter } from '../client.js';
 import {
   extractElements,
   paginationMeta,
+  pickFields,
   summarizeWorkPackage,
+  truncate,
   type HalCollection,
   type HalResource,
 } from '../hal.js';
@@ -42,11 +44,12 @@ export function registerWorkPackageTools(server: McpServer, client: OpenProjectC
         sortBy: z.array(z.tuple([z.string(), z.enum(['asc', 'desc'])])).optional(),
         groupBy: z.string().optional(),
         offset: z.number().int().positive().optional(),
-        pageSize: z.number().int().positive().max(1000).optional(),
+        pageSize: z.number().int().positive().max(100).optional().describe('Max 100'),
+        fields: z.array(z.string()).optional().describe('Return only these fields per element, e.g. ["id","subject","status"]'),
         raw: z.boolean().optional(),
       },
     },
-    async ({ projectIdOrIdentifier, filters, sortBy, groupBy, offset, pageSize, raw }) =>
+    async ({ projectIdOrIdentifier, filters, sortBy, groupBy, offset, pageSize, fields, raw }) =>
       tryTool(async () => {
         const path = projectIdOrIdentifier
           ? `/projects/${encodeURIComponent(projectIdOrIdentifier)}/work_packages`
@@ -61,7 +64,7 @@ export function registerWorkPackageTools(server: McpServer, client: OpenProjectC
         if (raw) return json(data);
         return json({
           ...paginationMeta(data),
-          elements: extractElements(data).map(summarizeWorkPackage),
+          elements: extractElements(data).map((wp) => pickFields(summarizeWorkPackage(wp), fields)),
         });
       }),
   );
@@ -236,13 +239,14 @@ export function registerWorkPackageTools(server: McpServer, client: OpenProjectC
     {
       title: 'List work package activities',
       description:
-        'List activities (comments and changes) on a work package, oldest first.',
+        'List activities (comments and changes) on a work package, oldest first. Comments are truncated to 500 chars by default; use full=true for complete text.',
       inputSchema: {
         id: z.number().int().positive(),
+        full: z.boolean().optional().describe('Return full comment text instead of truncated'),
         raw: z.boolean().optional(),
       },
     },
-    async ({ id, raw }) =>
+    async ({ id, full, raw }) =>
       tryTool(async () => {
         const data = await client.get<HalCollection>(`/work_packages/${id}/activities`);
         if (raw) return json(data);
@@ -253,7 +257,7 @@ export function registerWorkPackageTools(server: McpServer, client: OpenProjectC
             return {
               id: a.id,
               createdAt: a.createdAt,
-              comment: commentRaw,
+              comment: full ? commentRaw : truncate(commentRaw, 500),
               details: ((a.details as { raw?: string }[] | undefined) ?? []).map((d) => d.raw),
               version: a.version,
               attachmentRefs: extractAttachmentRefs(commentRaw),
@@ -309,6 +313,30 @@ export function registerWorkPackageTools(server: McpServer, client: OpenProjectC
           createdAt: data.createdAt,
           comment: (data.comment as { raw?: string } | undefined)?.raw ?? null,
         });
+      }),
+  );
+  server.registerTool(
+    'op_count_work_packages',
+    {
+      title: 'Count work packages',
+      description:
+        'Return only the total count of work packages matching filters. Much cheaper than listing when you only need a number. ' +
+        'Supports the same filter syntax as op_list_work_packages.',
+      inputSchema: {
+        projectIdOrIdentifier: z.string().optional(),
+        filters: filterSchema,
+      },
+    },
+    async ({ projectIdOrIdentifier, filters }) =>
+      tryTool(async () => {
+        const path = projectIdOrIdentifier
+          ? `/projects/${encodeURIComponent(projectIdOrIdentifier)}/work_packages`
+          : '/work_packages';
+        const data = await client.get<HalCollection>(path, {
+          filters: filters as Filter[] | undefined,
+          pageSize: 1,
+        });
+        return json({ total: data.total ?? 0 });
       }),
   );
 }

@@ -8,6 +8,8 @@ import {
   summarizeProject,
   summarizeUser,
   paginationMeta,
+  truncate,
+  pickFields,
 } from './hal.js';
 
 describe('hrefId', () => {
@@ -97,18 +99,96 @@ describe('extractElements', () => {
 });
 
 describe('paginationMeta', () => {
-  test('extracts pagination fields', () => {
+  test('extracts pagination fields with hasMore=true when more results exist', () => {
     const collection = { total: 42, count: 25, pageSize: 25, offset: 1 };
     expect(paginationMeta(collection)).toEqual({
       total: 42,
       count: 25,
       pageSize: 25,
       offset: 1,
+      hasMore: true,
+    });
+  });
+
+  test('hasMore is false when all results are returned', () => {
+    const collection = { total: 3, count: 3, pageSize: 25, offset: 1 };
+    expect(paginationMeta(collection)).toEqual({
+      total: 3,
+      count: 3,
+      pageSize: 25,
+      offset: 1,
+      hasMore: false,
+    });
+  });
+
+  test('hasMore is false on the last page', () => {
+    const collection = { total: 30, count: 5, pageSize: 25, offset: 26 };
+    expect(paginationMeta(collection)).toEqual({
+      total: 30,
+      count: 5,
+      pageSize: 25,
+      offset: 26,
+      hasMore: false,
     });
   });
 
   test('returns empty object for undefined', () => {
     expect(paginationMeta(undefined)).toEqual({});
+  });
+});
+
+describe('truncate', () => {
+  test('returns text unchanged when under maxLen', () => {
+    expect(truncate('short text', 200)).toBe('short text');
+  });
+
+  test('truncates text exceeding maxLen with ellipsis', () => {
+    const long = 'a'.repeat(300);
+    const result = truncate(long, 200);
+    expect(result).toHaveLength(201); // 200 chars + '…'
+    expect(result!.endsWith('…')).toBe(true);
+  });
+
+  test('returns null for null/undefined input', () => {
+    expect(truncate(null)).toBeNull();
+    expect(truncate(undefined)).toBeNull();
+  });
+
+  test('returns empty string as-is', () => {
+    expect(truncate('')).toBeNull();
+  });
+
+  test('uses default maxLen of 200', () => {
+    const exactly200 = 'x'.repeat(200);
+    expect(truncate(exactly200)).toBe(exactly200);
+    const over200 = 'x'.repeat(201);
+    expect(truncate(over200)).toHaveLength(201);
+  });
+
+  test('respects custom maxLen', () => {
+    expect(truncate('abcdef', 3)).toBe('abc…');
+  });
+});
+
+describe('pickFields', () => {
+  test('returns only specified fields', () => {
+    const obj = { id: 1, name: 'Test', status: 'open', priority: 'high' };
+    expect(pickFields(obj, ['id', 'name'])).toEqual({ id: 1, name: 'Test' });
+  });
+
+  test('ignores fields not present in object', () => {
+    const obj = { id: 1, name: 'Test' };
+    expect(pickFields(obj, ['id', 'missing'])).toEqual({ id: 1 });
+  });
+
+  test('returns full object when fields is undefined', () => {
+    const obj = { id: 1, name: 'Test' };
+    expect(pickFields(obj, undefined)).toEqual({ id: 1, name: 'Test' });
+  });
+
+  test('returns full object when fields is empty array', () => {
+    const obj = { id: 1, name: 'Test' };
+    expect(pickFields(obj, [])).toEqual({ id: 1, name: 'Test' });
   });
 });
 
@@ -187,6 +267,25 @@ describe('summarizeProject', () => {
   test('returns null description when not present', () => {
     const project = { id: 1, name: 'X', _links: {} };
     expect(summarizeProject(project).description).toBeNull();
+  });
+
+  test('returns full description by default (no truncation)', () => {
+    const long = 'a'.repeat(500);
+    const project = { id: 1, name: 'X', description: { raw: long }, _links: {} };
+    expect(summarizeProject(project).description).toBe(long);
+  });
+
+  test('truncates description when truncateDescription option is set', () => {
+    const long = 'a'.repeat(500);
+    const project = { id: 1, name: 'X', description: { raw: long }, _links: {} };
+    const result = summarizeProject(project, { truncateDescription: 200 });
+    expect((result.description as string).length).toBe(201); // 200 + '…'
+  });
+
+  test('does not truncate short description even with truncateDescription set', () => {
+    const project = { id: 1, name: 'X', description: { raw: 'Short' }, _links: {} };
+    const result = summarizeProject(project, { truncateDescription: 200 });
+    expect(result.description).toBe('Short');
   });
 });
 

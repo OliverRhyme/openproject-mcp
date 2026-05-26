@@ -52,6 +52,19 @@ EOF
 
 There is no test suite yet. End-to-end testing requires hitting a real OpenProject instance with a valid API token (`community.openproject.org` works for read-only smoke checks against public projects).
 
+## Output optimization
+
+Several mechanisms keep tool output small and context-window-friendly:
+
+- **Summarization by default.** All list/get tools return flat summaries via `summarize*` helpers. The `raw: true` flag bypasses this for callers who need the full HAL document.
+- **Description truncation.** `summarizeProject` truncates descriptions to 200 chars in list mode. `op_list_work_package_activities` truncates comments to 500 chars (use `full: true` for complete text). Single-item get tools always return full text.
+- **`fields` parameter.** List tools for work packages, projects, users, and notifications accept `fields: string[]` to return only specified fields per element (e.g. `["id","subject","status"]`). Uses `pickFields()` from `hal.ts`.
+- **Page size cap.** All list tools cap `pageSize` at 100 (default remains 25). This prevents accidental multi-MB responses.
+- **`hasMore` flag.** `paginationMeta()` includes `hasMore: boolean` so callers know whether more pages exist without computing it themselves.
+- **Aggregation tools.** `op_count_work_packages` and `op_count_projects` return only the total count matching filters (fetches `pageSize=1` internally). Use these instead of listing when you only need a number.
+
+When adding new list tools, follow these patterns: accept `fields` and `pageSize` (max 100), truncate long text in list mode, and use `paginationMeta()` for consistent pagination metadata.
+
 ## Adding a new tool
 
 1. Pick the domain file under `src/tools/` (or create one and import it from `src/index.ts`).

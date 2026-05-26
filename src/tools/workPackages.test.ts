@@ -71,7 +71,7 @@ describe('registerWorkPackageTools', () => {
     globalThis.fetch = originalFetch;
   });
 
-  test('registers all 7 work package tools', () => {
+  test('registers all 8 work package tools', () => {
     const server = makeServer();
     const tools = getTools(server);
     expect('op_list_work_packages' in tools).toBe(true);
@@ -81,6 +81,7 @@ describe('registerWorkPackageTools', () => {
     expect('op_delete_work_package' in tools).toBe(true);
     expect('op_list_work_package_activities' in tools).toBe(true);
     expect('op_comment_work_package' in tools).toBe(true);
+    expect('op_count_work_packages' in tools).toBe(true);
   });
 
   test('op_list_work_packages returns summarized list', async () => {
@@ -311,5 +312,120 @@ describe('registerWorkPackageTools', () => {
 
     // Second activity has no references
     expect(data.elements[1].attachmentRefs).toEqual([]);
+  });
+
+  test('op_list_work_packages respects fields parameter', async () => {
+    globalThis.fetch = mockFetch(200, {
+      total: 1, count: 1, pageSize: 25, offset: 1,
+      _embedded: { elements: [wpHal] },
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_list_work_packages', {
+      fields: ['id', 'subject', 'status'],
+    });
+    const data = JSON.parse(result.content[0].text);
+    const el = data.elements[0];
+    expect(Object.keys(el)).toEqual(['id', 'subject', 'status']);
+    expect(el.id).toBe(42);
+    expect(el.subject).toBe('Fix bug');
+    expect(el.status).toBe('New');
+  });
+
+  test('op_list_work_packages returns all fields when fields is not specified', async () => {
+    globalThis.fetch = mockFetch(200, {
+      total: 1, count: 1, pageSize: 25, offset: 1,
+      _embedded: { elements: [wpHal] },
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_list_work_packages');
+    const data = JSON.parse(result.content[0].text);
+    const el = data.elements[0];
+    expect(el.id).toBeDefined();
+    expect(el.subject).toBeDefined();
+    expect(el.type).toBeDefined();
+    expect(el.status).toBeDefined();
+    expect(el.lockVersion).toBeDefined();
+  });
+
+  test('op_list_work_packages includes hasMore in pagination', async () => {
+    globalThis.fetch = mockFetch(200, {
+      total: 50, count: 25, pageSize: 25, offset: 1,
+      _embedded: { elements: [wpHal] },
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_list_work_packages');
+    const data = JSON.parse(result.content[0].text);
+    expect(data.hasMore).toBe(true);
+  });
+
+  test('op_list_work_package_activities truncates long comments by default', async () => {
+    const longComment = 'x'.repeat(1000);
+    globalThis.fetch = mockFetch(200, {
+      _embedded: {
+        elements: [
+          {
+            id: 1, createdAt: '2025-01-01T00:00:00Z',
+            comment: { raw: longComment },
+            details: [],
+            version: 1,
+          },
+        ],
+      },
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_list_work_package_activities', { id: 42 });
+    const data = JSON.parse(result.content[0].text);
+    expect(data.elements[0].comment.length).toBe(501); // 500 + '…'
+    expect(data.elements[0].comment.endsWith('…')).toBe(true);
+  });
+
+  test('op_list_work_package_activities returns full comments with full=true', async () => {
+    const longComment = 'x'.repeat(1000);
+    globalThis.fetch = mockFetch(200, {
+      _embedded: {
+        elements: [
+          {
+            id: 1, createdAt: '2025-01-01T00:00:00Z',
+            comment: { raw: longComment },
+            details: [],
+            version: 1,
+          },
+        ],
+      },
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_list_work_package_activities', { id: 42, full: true });
+    const data = JSON.parse(result.content[0].text);
+    expect(data.elements[0].comment).toBe(longComment);
+    expect(data.elements[0].comment.length).toBe(1000);
+  });
+
+  test('op_count_work_packages returns only total count', async () => {
+    const fetchMock = mockFetch(200, {
+      total: 157, count: 1, pageSize: 1, offset: 1,
+      _embedded: { elements: [wpHal] },
+    });
+    globalThis.fetch = fetchMock;
+    const server = makeServer();
+    const result = await callTool(server, 'op_count_work_packages');
+    const data = JSON.parse(result.content[0].text);
+    expect(data).toEqual({ total: 157 });
+    // Verify it requests pageSize=1 for efficiency
+    const url = fetchMock.mock.calls[0]![0] as string;
+    expect(url).toContain('pageSize=1');
+  });
+
+  test('op_count_work_packages scopes to project', async () => {
+    const fetchMock = mockFetch(200, {
+      total: 10, count: 1, pageSize: 1, offset: 1,
+      _embedded: { elements: [wpHal] },
+    });
+    globalThis.fetch = fetchMock;
+    const server = makeServer();
+    await callTool(server, 'op_count_work_packages', {
+      projectIdOrIdentifier: 'alpha',
+    });
+    const url = fetchMock.mock.calls[0]![0] as string;
+    expect(url).toContain('/projects/alpha/work_packages');
   });
 });

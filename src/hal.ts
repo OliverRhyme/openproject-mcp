@@ -69,12 +69,16 @@ export function summarizeWorkPackage(wp: HalResource): Record<string, unknown> {
   };
 }
 
-export function summarizeProject(p: HalResource): Record<string, unknown> {
+export function summarizeProject(
+  p: HalResource,
+  opts?: { truncateDescription?: number },
+): Record<string, unknown> {
+  const desc = (p.description as { raw?: string } | undefined)?.raw ?? null;
   return {
     id: p.id,
     name: p.name,
     identifier: p.identifier,
-    description: (p.description as { raw?: string } | undefined)?.raw ?? null,
+    description: opts?.truncateDescription ? truncate(desc, opts.truncateDescription) : desc,
     active: p.active,
     public: p.public,
     parent: {
@@ -100,14 +104,37 @@ export function summarizeUser(u: HalResource): Record<string, unknown> {
   };
 }
 
+export function truncate(text: string | null | undefined, maxLen = 200): string | null {
+  if (!text) return null;
+  if (text.length <= maxLen) return text;
+  return text.slice(0, maxLen) + '…';
+}
+
+export function pickFields<T extends Record<string, unknown>>(
+  obj: T,
+  fields: string[] | undefined,
+): Record<string, unknown> {
+  if (!fields || fields.length === 0) return obj;
+  const result: Record<string, unknown> = {};
+  for (const f of fields) {
+    if (f in obj) result[f] = obj[f];
+  }
+  return result;
+}
+
 export function paginationMeta(
   c: HalCollection | undefined,
 ): Record<string, unknown> {
   if (!c) return {};
+  const total = c.total ?? 0;
+  const offset = c.offset ?? 1;
+  const pageSize = c.pageSize ?? 0;
+  const count = c.count ?? 0;
   return {
-    total: c.total,
-    count: c.count,
-    pageSize: c.pageSize,
-    offset: c.offset,
+    total,
+    count,
+    pageSize,
+    offset,
+    hasMore: offset + count - 1 < total,
   };
 }

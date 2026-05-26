@@ -96,4 +96,32 @@ describe('registerUserTools', () => {
     const data = JSON.parse(result.content[0].text);
     expect(data.id).toBe(10);
   });
+
+  test('op_list_users respects fields parameter', async () => {
+    globalThis.fetch = mockFetch(200, {
+      total: 1, count: 1, pageSize: 25, offset: 1,
+      _embedded: { elements: [userHal] },
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_list_users', {
+      fields: ['id', 'name', 'email'],
+    });
+    const data = JSON.parse(result.content[0].text);
+    const el = data.elements[0];
+    expect(Object.keys(el)).toEqual(['id', 'name', 'email']);
+    expect(el.id).toBe(10);
+    expect(el.name).toBe('Alice Smith');
+    expect(el.email).toBe('alice@example.com');
+  });
+
+  test('op_list_users includes hasMore in pagination', async () => {
+    globalThis.fetch = mockFetch(200, {
+      total: 100, count: 25, pageSize: 25, offset: 1,
+      _embedded: { elements: [userHal] },
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_list_users');
+    const data = JSON.parse(result.content[0].text);
+    expect(data.hasMore).toBe(true);
+  });
 });

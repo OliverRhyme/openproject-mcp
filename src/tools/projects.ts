@@ -4,6 +4,7 @@ import { OpenProjectClient, type Filter } from '../client.js';
 import {
   extractElements,
   paginationMeta,
+  pickFields,
   summarizeProject,
   type HalCollection,
   type HalResource,
@@ -27,7 +28,8 @@ const listInput = {
     .optional()
     .describe('e.g. [["name", "asc"]]'),
   offset: z.number().int().positive().optional().describe('Page number (1-based)'),
-  pageSize: z.number().int().positive().max(1000).optional(),
+  pageSize: z.number().int().positive().max(100).optional().describe('Max 100'),
+  fields: z.array(z.string()).optional().describe('Return only these fields per element, e.g. ["id","name","status"]'),
   raw: z.boolean().optional().describe('Return full HAL response instead of summary'),
 };
 
@@ -41,7 +43,7 @@ export function registerProjectTools(server: McpServer, client: OpenProjectClien
         'Common fields: "active" ("=" true/false), "name_and_identifier" ("~" substring), "parent_id" ("=" id).',
       inputSchema: listInput,
     },
-    async ({ filters, sortBy, offset, pageSize, raw }) =>
+    async ({ filters, sortBy, offset, pageSize, fields, raw }) =>
       tryTool(async () => {
         const data = await client.get<HalCollection>('/projects', {
           filters: filters as Filter[] | undefined,
@@ -52,7 +54,9 @@ export function registerProjectTools(server: McpServer, client: OpenProjectClien
         if (raw) return json(data);
         return json({
           ...paginationMeta(data),
-          elements: extractElements(data).map(summarizeProject),
+          elements: extractElements(data).map((p) =>
+            pickFields(summarizeProject(p, { truncateDescription: 200 }), fields),
+          ),
         });
       }),
   );
@@ -154,6 +158,26 @@ export function registerProjectTools(server: McpServer, client: OpenProjectClien
       tryTool(async () => {
         await client.delete(`/projects/${encodeURIComponent(idOrIdentifier)}`);
         return json({ deleted: idOrIdentifier });
+      }),
+  );
+
+  server.registerTool(
+    'op_count_projects',
+    {
+      title: 'Count projects',
+      description:
+        'Return only the total count of projects matching filters. Much cheaper than listing when you only need a number.',
+      inputSchema: {
+        filters: filterSchema,
+      },
+    },
+    async ({ filters }) =>
+      tryTool(async () => {
+        const data = await client.get<HalCollection>('/projects', {
+          filters: filters as Filter[] | undefined,
+          pageSize: 1,
+        });
+        return json({ total: data.total ?? 0 });
       }),
   );
 }

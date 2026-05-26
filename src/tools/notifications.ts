@@ -5,6 +5,7 @@ import {
   extractElements,
   hrefTitle,
   paginationMeta,
+  pickFields,
   pickLink,
   type HalCollection,
   type HalResource,
@@ -46,11 +47,12 @@ export function registerNotificationTools(server: McpServer, client: OpenProject
         filters: filterSchema,
         sortBy: z.array(z.tuple([z.string(), z.enum(['asc', 'desc'])])).optional(),
         offset: z.number().int().positive().optional(),
-        pageSize: z.number().int().positive().max(1000).optional(),
+        pageSize: z.number().int().positive().max(100).optional().describe('Max 100'),
+        fields: z.array(z.string()).optional().describe('Return only these fields per element, e.g. ["id","reason","project"]'),
         raw: z.boolean().optional(),
       },
     },
-    async ({ filters, sortBy, offset, pageSize, raw }) =>
+    async ({ filters, sortBy, offset, pageSize, fields, raw }) =>
       tryTool(async () => {
         const data = await client.get<HalCollection>('/notifications', {
           filters: filters as Filter[] | undefined,
@@ -61,7 +63,7 @@ export function registerNotificationTools(server: McpServer, client: OpenProject
         if (raw) return json(data);
         return json({
           ...paginationMeta(data),
-          elements: extractElements(data).map(summarizeNotification),
+          elements: extractElements(data).map((n) => pickFields(summarizeNotification(n), fields)),
         });
       }),
   );

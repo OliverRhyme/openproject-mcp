@@ -37,9 +37,21 @@ async function main() {
     await server.connect(transport);
     process.stderr.write(`openproject-mcp connected to ${config.baseUrl} (page size ${config.defaultPageSize})\n`);
 }
-const isMainModule = typeof process !== 'undefined' &&
-    process.argv[1] &&
-    (process.argv[1].endsWith('/index.js') || process.argv[1].endsWith('/index.ts'));
+import { fileURLToPath } from 'node:url';
+import { realpathSync } from 'node:fs';
+const self = fileURLToPath(import.meta.url);
+const invoked = (() => {
+    const arg = process.argv[1];
+    if (!arg)
+        return '';
+    try {
+        return realpathSync(arg);
+    }
+    catch {
+        return arg;
+    }
+})();
+const isMainModule = invoked === self;
 if (isMainModule) {
     main().catch((err) => {
         process.stderr.write(`openproject-mcp fatal: ${err.message}\n`);

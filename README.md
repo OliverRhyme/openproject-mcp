@@ -26,13 +26,10 @@ Claude Desktop, Claude Code, Cursor, and any other MCP client.
 
 ## Installation
 
-Clone the repo, install dependencies, and build:
+No clone or build step needed -- `npx` installs and builds directly from GitHub:
 
 ```bash
-git clone https://github.com/OliverRhyme/openproject-mcp.git
-cd openproject-mcp
-npm install
-npm run build
+npx -y github:OliverRhyme/openproject-mcp
 ```
 
 ## Configuration
@@ -52,9 +49,6 @@ which is the form OpenProject documents for token-based access.
 
 ## Quick start
 
-In the examples below, replace `/path/to/openproject-mcp` with the absolute
-path where you cloned the repo.
-
 ### Claude Desktop
 
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
@@ -63,8 +57,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "openproject": {
-      "command": "node",
-      "args": ["/path/to/openproject-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "github:OliverRhyme/openproject-mcp"],
       "env": {
         "OPENPROJECT_BASE_URL": "https://your-instance.openproject.com",
         "OPENPROJECT_API_KEY": "your-token"
@@ -80,7 +74,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 claude mcp add openproject \
   --env OPENPROJECT_BASE_URL=https://your-instance.openproject.com \
   --env OPENPROJECT_API_KEY=your-token \
-  -- node /path/to/openproject-mcp/dist/index.js
+  -- npx -y github:OliverRhyme/openproject-mcp
 ```
 
 ### Cursor
@@ -91,8 +85,8 @@ Add to `.cursor/mcp.json` in your project root:
 {
   "mcpServers": {
     "openproject": {
-      "command": "node",
-      "args": ["/path/to/openproject-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "github:OliverRhyme/openproject-mcp"],
       "env": {
         "OPENPROJECT_BASE_URL": "https://your-instance.openproject.com",
         "OPENPROJECT_API_KEY": "your-token"
@@ -102,13 +96,14 @@ Add to `.cursor/mcp.json` in your project root:
 }
 ```
 
-### Development mode (no build step)
+### Local development
 
-If you're working on the server itself, you can skip the build and run directly:
+If you're working on the server itself:
 
 ```bash
-OPENPROJECT_BASE_URL=https://your-instance.openproject.com \
-OPENPROJECT_API_KEY=your-token \
+git clone https://github.com/OliverRhyme/openproject-mcp.git
+cd openproject-mcp
+npm install
 npm run dev
 ```
 

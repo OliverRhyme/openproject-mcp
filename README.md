@@ -26,7 +26,11 @@ Claude Desktop, Claude Code, Cursor, and any other MCP client.
 
 ## Installation
 
+Clone the repo, install dependencies, and build:
+
 ```bash
+git clone https://github.com/OliverRhyme/openproject-mcp.git
+cd openproject-mcp
 npm install
 npm run build
 ```
@@ -48,6 +52,9 @@ which is the form OpenProject documents for token-based access.
 
 ## Quick start
 
+In the examples below, replace `/path/to/openproject-mcp` with the absolute
+path where you cloned the repo.
+
 ### Claude Desktop
 
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
@@ -57,7 +64,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "openproject": {
       "command": "node",
-      "args": ["/absolute/path/to/openproject-mcp/dist/index.js"],
+      "args": ["/path/to/openproject-mcp/dist/index.js"],
       "env": {
         "OPENPROJECT_BASE_URL": "https://your-instance.openproject.com",
         "OPENPROJECT_API_KEY": "your-token"
@@ -73,7 +80,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 claude mcp add openproject \
   --env OPENPROJECT_BASE_URL=https://your-instance.openproject.com \
   --env OPENPROJECT_API_KEY=your-token \
-  -- node /absolute/path/to/openproject-mcp/dist/index.js
+  -- node /path/to/openproject-mcp/dist/index.js
 ```
 
 ### Cursor
@@ -85,7 +92,7 @@ Add to `.cursor/mcp.json` in your project root:
   "mcpServers": {
     "openproject": {
       "command": "node",
-      "args": ["/absolute/path/to/openproject-mcp/dist/index.js"],
+      "args": ["/path/to/openproject-mcp/dist/index.js"],
       "env": {
         "OPENPROJECT_BASE_URL": "https://your-instance.openproject.com",
         "OPENPROJECT_API_KEY": "your-token"
@@ -96,6 +103,8 @@ Add to `.cursor/mcp.json` in your project root:
 ```
 
 ### Development mode (no build step)
+
+If you're working on the server itself, you can skip the build and run directly:
 
 ```bash
 OPENPROJECT_BASE_URL=https://your-instance.openproject.com \

@@ -4,54 +4,26 @@ An [MCP](https://modelcontextprotocol.io) server that exposes the
 [OpenProject](https://www.openproject.org) REST API (v3) as tools usable by
 Claude Desktop, Claude Code, Cursor, and any other MCP client.
 
-## Features
+## Install
 
-- **Projects** -- list, get, create, update, delete
-- **Work packages** -- list, get, create, update (with `lockVersion`), delete, activity/comment thread, inline file attachments on comments
-- **Relations** -- list, get, create, delete (blocks, precedes, relates, duplicates, etc.)
-- **Attachments** -- list, get (with download), upload (with auto-embed in description or comment), delete
-- **Users** -- current user, list, get
-- **Notifications** -- list, get, mark read, mark all read
-- **Watchers** -- list, add, remove watchers on work packages
-- **Boards** -- list and get Kanban-style boards
-- **Reference data** -- work package types, statuses, priorities, versions
-- **Raw passthrough** -- call any GET endpoint under `/api/v3` directly
-- Filter, sort, group, and paginate via OpenProject's native query syntax
+> **Before you start:** you need an OpenProject API token. Get one from
+> _My account > Access tokens > API_ in your OpenProject instance.
 
-## Requirements
+Pick your MCP client and run one command:
 
-- Node.js >= 18.17
-- An OpenProject instance with API access enabled
-- An API token (from _My account > Access tokens > API_ in OpenProject)
-
-## Installation
-
-No clone or build step needed -- `npx` installs and builds directly from GitHub:
+### Claude Code
 
 ```bash
-npx -y github:OliverRhyme/openproject-mcp
+claude mcp add openproject \
+  --env OPENPROJECT_BASE_URL=https://your-instance.openproject.com \
+  --env OPENPROJECT_API_KEY=your-token \
+  -- npx -y github:OliverRhyme/openproject-mcp
 ```
-
-## Configuration
-
-The server reads environment variables at startup. No `.env` file is loaded
-automatically -- pass them via your MCP client's env config or your shell.
-
-| Variable                 | Required | Default | Notes                                    |
-| ------------------------ | -------- | ------- | ---------------------------------------- |
-| `OPENPROJECT_BASE_URL`   | yes      | --      | e.g. `https://community.openproject.org` |
-| `OPENPROJECT_API_KEY`    | yes      | --      | From _My account > Access tokens > API_  |
-| `OPENPROJECT_PAGE_SIZE`  | no       | `25`    | Default page size for list endpoints     |
-| `OPENPROJECT_TIMEOUT_MS` | no       | `30000` | HTTP request timeout in milliseconds     |
-
-The API key is sent via HTTP Basic auth with the literal username `apikey`,
-which is the form OpenProject documents for token-based access.
-
-## Quick start
 
 ### Claude Desktop
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
+or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
@@ -66,15 +38,6 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
     }
   }
 }
-```
-
-### Claude Code
-
-```bash
-claude mcp add openproject \
-  --env OPENPROJECT_BASE_URL=https://your-instance.openproject.com \
-  --env OPENPROJECT_API_KEY=your-token \
-  -- npx -y github:OliverRhyme/openproject-mcp
 ```
 
 ### Cursor
@@ -96,16 +59,60 @@ Add to `.cursor/mcp.json` in your project root:
 }
 ```
 
-### Local development
+### Windsurf
 
-If you're working on the server itself:
+Add to `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "openproject": {
+      "command": "npx",
+      "args": ["-y", "github:OliverRhyme/openproject-mcp"],
+      "env": {
+        "OPENPROJECT_BASE_URL": "https://your-instance.openproject.com",
+        "OPENPROJECT_API_KEY": "your-token"
+      }
+    }
+  }
+}
+```
+
+### Any other MCP client (generic stdio)
+
+Run this as the server process:
 
 ```bash
-git clone https://github.com/OliverRhyme/openproject-mcp.git
-cd openproject-mcp
-npm install
-npm run dev
+OPENPROJECT_BASE_URL=https://your-instance.openproject.com \
+OPENPROJECT_API_KEY=your-token \
+npx -y github:OliverRhyme/openproject-mcp
 ```
+
+The server speaks JSON-RPC over stdio. No build step needed — `npx` fetches, installs, and runs it directly from GitHub.
+
+## Configuration
+
+| Variable                 | Required | Default | Notes                                    |
+| ------------------------ | -------- | ------- | ---------------------------------------- |
+| `OPENPROJECT_BASE_URL`   | yes      | --      | e.g. `https://community.openproject.org` |
+| `OPENPROJECT_API_KEY`    | yes      | --      | From _My account > Access tokens > API_  |
+| `OPENPROJECT_PAGE_SIZE`  | no       | `25`    | Default page size for list endpoints     |
+| `OPENPROJECT_TIMEOUT_MS` | no       | `30000` | HTTP request timeout in milliseconds     |
+
+## Features
+
+- **Projects** -- list, get, create, update, delete, count
+- **Work packages** -- list, get, create, update (with `lockVersion`), delete, activity/comment thread, inline file attachments on comments, count
+- **Relations** -- list, get, create, delete (blocks, precedes, relates, duplicates, etc.)
+- **Attachments** -- list, get (with download), upload (with auto-embed in description or comment), delete
+- **Users** -- current user, list, get
+- **Notifications** -- list, get, mark read, mark all read
+- **Watchers** -- list, add, remove watchers on work packages
+- **Boards** -- list and get Kanban-style boards
+- **Reference data** -- work package types, statuses, priorities, versions
+- **Raw passthrough** -- call any GET endpoint under `/api/v3` directly
+- Filter, sort, group, and paginate via OpenProject's native query syntax
+- **Output optimization** -- field selection, description truncation, `hasMore` pagination flag, lightweight count tools
 
 ## Tools reference
 
@@ -113,13 +120,14 @@ All tools are prefixed `op_` to avoid collisions with other MCP servers.
 
 ### Projects
 
-| Tool                | Description                              |
-| ------------------- | ---------------------------------------- |
-| `op_list_projects`  | List projects with filter/sort/paginate  |
-| `op_get_project`    | Get project by id or identifier slug     |
-| `op_create_project` | Create a new project                     |
-| `op_update_project` | Patch project fields                     |
-| `op_delete_project` | Delete a project (destructive, async)    |
+| Tool                  | Description                              |
+| --------------------- | ---------------------------------------- |
+| `op_list_projects`    | List projects with filter/sort/paginate  |
+| `op_get_project`      | Get project by id or identifier slug     |
+| `op_create_project`   | Create a new project                     |
+| `op_update_project`   | Patch project fields                     |
+| `op_delete_project`   | Delete a project (destructive, async)    |
+| `op_count_projects`   | Count projects matching filters          |
 
 ### Work packages
 
@@ -132,6 +140,7 @@ All tools are prefixed `op_` to avoid collisions with other MCP servers.
 | `op_delete_work_package`          | Delete a work package (destructive)                               |
 | `op_list_work_package_activities` | List comments and change history                                  |
 | `op_comment_work_package`         | Add a comment, optionally attaching and embedding a file inline   |
+| `op_count_work_packages`          | Count work packages matching filters                              |
 
 ### Relations
 
@@ -228,6 +237,34 @@ Common operators:
 
 Filter values are always strings, even for numeric ids: `"values": ["42"]`, not `[42]`.
 
+### Output optimization
+
+List tools return summarized output by default. Several options keep responses small:
+
+**`fields`** -- Return only specific fields per element:
+```jsonc
+// op_list_work_packages
+{ "fields": ["id", "subject", "status"] }
+// -> elements contain only { id, subject, status }
+```
+
+**`raw`** -- Get the full HAL+JSON document from OpenProject:
+```jsonc
+// op_get_work_package
+{ "id": 17, "raw": true }
+```
+
+**Count tools** -- When you only need a number, use `op_count_work_packages` or `op_count_projects` instead of listing:
+```jsonc
+// op_count_work_packages
+{ "projectIdOrIdentifier": "web", "filters": [{ "field": "status_id", "operator": "o", "values": null }] }
+// -> { "total": 42 }
+```
+
+**Pagination** -- All list responses include `hasMore: true|false` so you know if there are more pages. Max `pageSize` is 100; default is 25.
+
+**Truncation** -- Project descriptions are truncated to 200 chars in list mode. Activity comments are truncated to 500 chars by default; pass `full: true` to `op_list_work_package_activities` for complete text.
+
 ### Updating work packages (lockVersion)
 
 OpenProject uses optimistic locking. You must pass the current `lockVersion`
@@ -289,18 +326,14 @@ Link work packages with dependency or reference relations:
 Relation types: `relates`, `duplicates`, `blocks`, `precedes`, `follows`,
 `includes`, `partOf`, `requires`.
 
-### Raw mode
+## Local development
 
-Most list and get tools accept a `raw: true` flag. By default, responses are
-summarized into flat objects for smaller context windows. Set `raw: true` to
-get the full HAL+JSON document from OpenProject:
-
-```jsonc
-// op_get_work_package
-{ "id": 17, "raw": true }
+```bash
+git clone https://github.com/OliverRhyme/openproject-mcp.git
+cd openproject-mcp
+npm install
+npm run dev
 ```
-
-## Scripts
 
 | Command              | Purpose                                   |
 | -------------------- | ----------------------------------------- |
@@ -312,7 +345,7 @@ get the full HAL+JSON document from OpenProject:
 | `npm run test:watch` | Run tests in watch mode                   |
 | `npm run typecheck`  | Type-check without emitting               |
 
-## Smoke test
+### Smoke test
 
 Verify the server boots and lists tools without a real OpenProject instance:
 

@@ -93,6 +93,43 @@ export function laneValue(query: HalResource): LaneValue | null {
   return { id: hrefId(v), title: v.title ?? null };
 }
 
+export interface ResolvedLane {
+  queryId: number;
+  name: string | null;
+  query: HalResource;
+}
+
+/** Resolve a board's lane widgets into their backing queries (name + full query resource). */
+export async function resolveLanes(
+  client: OpenProjectClient,
+  grid: HalResource,
+): Promise<ResolvedLane[]> {
+  const widgets = laneWidgets(grid);
+  return Promise.all(
+    widgets.map(async (w) => {
+      const query = await client.get<HalResource>(`/queries/${w.queryId}`);
+      return { queryId: w.queryId, name: (query.name as string | undefined) ?? null, query };
+    }),
+  );
+}
+
+/** Find a lane by numeric query id or case-insensitive name. */
+export function findLane(lanes: ResolvedLane[], lane: string | number): ResolvedLane | undefined {
+  return lanes.find((l) =>
+    typeof lane === 'number'
+      ? l.queryId === lane
+      : l.name?.toLowerCase() === String(lane).toLowerCase(),
+  );
+}
+
+/** Standard "lane not found" error listing the available lanes as "name (queryId)". */
+export function laneNotFoundError(lanes: ResolvedLane[], lane: string | number, boardId: number): Error {
+  return new Error(
+    `Lane "${lane}" not found on board ${boardId}. Available lanes: ` +
+      lanes.map((l) => `${l.name} (${l.queryId})`).join(', '),
+  );
+}
+
 const ATTRIBUTE_LINKS: Record<string, { rel: string; collection: string }> = {
   status: { rel: 'status', collection: 'statuses' },
   assignee: { rel: 'assignee', collection: 'users' },
@@ -233,27 +270,11 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
       tryTool(async () => {
         const grid = await client.get<HalResource>(`/grids/${boardId}`);
         const type = boardType(grid);
-        const widgets = laneWidgets(grid);
 
         // Resolve each lane's query for name (+ value for action boards).
-        const lanes = await Promise.all(
-          widgets.map(async (w) => {
-            const q = await client.get<HalResource>(`/queries/${w.queryId}`);
-            return { queryId: w.queryId, name: (q.name as string | undefined) ?? null, query: q };
-          }),
-        );
-
-        const target = lanes.find((l) =>
-          typeof toLane === 'number'
-            ? l.queryId === toLane
-            : l.name?.toLowerCase() === String(toLane).toLowerCase(),
-        );
-        if (!target) {
-          throw new Error(
-            `Lane "${toLane}" not found on board ${boardId}. Available lanes: ` +
-              lanes.map((l) => `${l.name} (${l.queryId})`).join(', '),
-          );
-        }
+        const lanes = await resolveLanes(client, grid);
+        const target = findLane(lanes, toLane);
+        if (!target) throw laneNotFoundError(lanes, toLane, boardId);
 
         if (type === 'free') {
           const wpKey = String(workPackageId);
@@ -379,7 +400,8 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
       description:
         'Rewrite a free-board lane’s manual-sort positions to clean, evenly-gapped values, ' +
         'preserving the current visual order. Use to clean up position ties/drift from concurrent moves. ' +
-        'lane may be a lane query id or lane name (case-insensitive).',
+        'lane may be a lane query id or lane name (case-insensitive).' +
+        ' Run when the lane is quiescent — this rewrites every card’s position, so concurrent moves during a rebalance may be overwritten.',
       inputSchema: {
         boardId: z.number().int().positive(),
         lane: z.union([z.string(), z.number()]).describe('Lane query id, or lane name (case-insensitive)'),
@@ -389,24 +411,9 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
     async ({ boardId, lane, gap }) =>
       tryTool(async () => {
         const grid = await client.get<HalResource>(`/grids/${boardId}`);
-        const widgets = laneWidgets(grid);
-        const resolved = await Promise.all(
-          widgets.map(async (w) => {
-            const q = await client.get<HalResource>(`/queries/${w.queryId}`);
-            return { queryId: w.queryId, name: (q.name as string | undefined) ?? null };
-          }),
-        );
-        const target = resolved.find((l) =>
-          typeof lane === 'number'
-            ? l.queryId === lane
-            : l.name?.toLowerCase() === String(lane).toLowerCase(),
-        );
-        if (!target) {
-          throw new Error(
-            `Lane "${lane}" not found on board ${boardId}. Available lanes: ` +
-              resolved.map((l) => `${l.name} (${l.queryId})`).join(', '),
-          );
-        }
+        const lanes = await resolveLanes(client, grid);
+        const target = findLane(lanes, lane);
+        if (!target) throw laneNotFoundError(lanes, lane, boardId);
 
         const step = gap ?? POSITION_GAP;
         const current = await client.get<Record<string, number>>(`/queries/${target.queryId}/order`);

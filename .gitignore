@@ -6,3 +6,6 @@ dist/
 .DS_Store
 .vscode/
 .idea/
+
+# superpowers / AI-local docs — never committed
+docs/superpowers/

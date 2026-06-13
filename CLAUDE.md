@@ -28,6 +28,7 @@ All tools are prefixed `op_` so they don't collide with other MCP servers a user
 - **Foreign keys go through `_links`.** Status, assignee, type, priority, project, parent — all of these are HAL links of the form `{ "href": "/api/v3/<collection>/<id>" }`, not plain id fields. The `linkRef()` helper in `tools/workPackages.ts` is the canonical pattern.
 - **Filter values are always strings, even for ids and booleans.** OpenProject expects `{ "operator": "=", "values": ["42"] }`, not `[42]`. The shared zod filter schema enforces `z.array(z.string()).nullable()`.
 - **`/projects/{id}/work_packages` is deprecated** in favor of `/workspaces/{id}/work_packages` per the OpenProject docs, but the project-scoped path still works on current releases. We use it because workspaces aren't universal yet. Revisit if OpenProject 16+ drops compatibility.
+- **Board lanes are query-backed.** A board is a Grid; each lane is a column widget pointing at a `queryId`, and the lane name is the **query's** name. Free boards (`grid.options.type === 'free'`) store lane membership as manual ordering — move a card with `PATCH /api/v3/queries/{id}/order` body `{ "delta": { "<wpId>": position } }` (`-1` removes; the `updateOrderedWorkPackages` HAL link wrongly advertises PUT — use PATCH). Action boards (`type === 'action'`, `options.attribute` = status/assignee/version/subproject) store membership as the work package's attribute — move by PATCHing that `_link`. `op_list_board_lanes` and `op_move_card` encapsulate both.
 
 ## Commands
 

@@ -135,4 +135,59 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
         return json(raw ? data : summarizeBoard(data));
       }),
   );
+
+  server.registerTool(
+    'op_list_board_lanes',
+    {
+      title: 'List board lanes',
+      description:
+        'List the lanes (columns) of a board with each lane’s name, backing query id, card count, and cards. ' +
+        'Works for free and action boards. For action boards each lane includes the attribute value it represents.',
+      inputSchema: {
+        boardId: z.number().int().positive().describe('The grid id (the number in /boards/{id})'),
+        includeCards: z.boolean().optional().describe('Include cards per lane (default true)'),
+        maxCardsPerLane: z.number().int().positive().max(100).optional().describe('Max cards per lane (default 20, max 100)'),
+        cardFields: z.array(z.string()).optional().describe('Return only these fields per card, e.g. ["id","subject","status"]'),
+        raw: z.boolean().optional(),
+      },
+    },
+    async ({ boardId, includeCards, maxCardsPerLane, cardFields, raw }) =>
+      tryTool(async () => {
+        const grid = await client.get<HalResource>(`/grids/${boardId}`);
+        const type = boardType(grid);
+        const attr = actionAttribute(grid);
+        const widgets = laneWidgets(grid);
+        const pageSize = maxCardsPerLane ?? 20;
+        const withCards = includeCards !== false;
+
+        const queries = await Promise.all(
+          widgets.map((w) => client.get<HalResource>(`/queries/${w.queryId}`, { pageSize })),
+        );
+        if (raw) return json({ grid, queries });
+
+        const lanes = widgets.map((w, i) => {
+          const q = queries[i]!;
+          const results = (q._embedded as { results?: HalCollection } | undefined)?.results;
+          const cards = extractElements(results).map((wp) =>
+            pickFields(summarizeWorkPackage(wp), cardFields),
+          );
+          return {
+            name: (q.name as string | undefined) ?? null,
+            queryId: w.queryId,
+            value: type === 'action' ? laneValue(q) : null,
+            total: results?.total ?? 0,
+            hasMore: paginationMeta(results).hasMore,
+            ...(withCards ? { cards } : {}),
+          };
+        });
+
+        return json({
+          boardId,
+          name: (grid.name as string | undefined) ?? null,
+          type,
+          actionAttribute: attr,
+          lanes,
+        });
+      }),
+  );
 }

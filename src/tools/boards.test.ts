@@ -188,6 +188,71 @@ describe('registerBoardTools', () => {
   });
 });
 
+describe('op_list_board_lanes', () => {
+  let originalFetch: typeof globalThis.fetch;
+  beforeEach(() => { originalFetch = globalThis.fetch; });
+  afterEach(() => { globalThis.fetch = originalFetch; });
+
+  test('free board: lanes ordered by column with names, counts, cards', async () => {
+    globalThis.fetch = routeFetch([
+      { match: (u, m) => m === 'GET' && u.includes('/grids/847'), body: freeGrid },
+      { match: (u) => u.includes('/queries/100'), body:
+        queryHal({ id: 100, name: 'TODO', cards: [wpHal(1, 'A'), wpHal(2, 'B')], total: 2 }) },
+      { match: (u) => u.includes('/queries/101'), body:
+        queryHal({ id: 101, name: 'IN PROGRESS', cards: [wpHal(3, 'C')], total: 5 }) },
+    ]);
+    const server = makeServer();
+    const result = await callTool(server, 'op_list_board_lanes', { boardId: 847 });
+    const data = JSON.parse(result.content[0].text);
+    expect(data.type).toBe('free');
+    expect(data.actionAttribute).toBeNull();
+    expect(data.lanes.map((l: any) => l.name)).toEqual(['TODO', 'IN PROGRESS']);
+    expect(data.lanes[0].queryId).toBe(100);
+    expect(data.lanes[0].total).toBe(2);
+    expect(data.lanes[0].cards.map((c: any) => c.id)).toEqual([1, 2]);
+    expect(data.lanes[1].total).toBe(5);
+    expect(data.lanes[1].hasMore).toBe(true); // total 5 > count 1
+  });
+
+  test('passes maxCardsPerLane as pageSize and respects cardFields', async () => {
+    const fetchMock = routeFetch([
+      { match: (u, m) => m === 'GET' && u.includes('/grids/847'), body: freeGrid },
+      { match: (u) => u.includes('/queries/100'), body:
+        queryHal({ id: 100, name: 'TODO', cards: [wpHal(1, 'A')] }) },
+      { match: (u) => u.includes('/queries/101'), body:
+        queryHal({ id: 101, name: 'IN PROGRESS', cards: [] }) },
+    ]);
+    globalThis.fetch = fetchMock;
+    const server = makeServer();
+    const result = await callTool(server, 'op_list_board_lanes', {
+      boardId: 847, maxCardsPerLane: 10, cardFields: ['id', 'subject'],
+    });
+    const queryUrl = fetchMock.mock.calls.map((c: any) => c[0]).find((u: string) => u.includes('/queries/100'));
+    expect(queryUrl).toContain('pageSize=10');
+    const data = JSON.parse(result.content[0].text);
+    expect(Object.keys(data.lanes[0].cards[0])).toEqual(['id', 'subject']);
+  });
+
+  test('action board: lane carries extracted value', async () => {
+    globalThis.fetch = routeFetch([
+      { match: (u, m) => m === 'GET' && u.includes('/grids/900'), body: actionGrid },
+      { match: (u) => u.includes('/queries/200'), body: queryHal({
+        id: 200, name: 'In progress', cards: [],
+        extraFilters: [{ _type: 'StatusQueryFilter', _links: {
+          filter: { href: '/api/v3/queries/filters/status' },
+          values: [{ href: '/api/v3/statuses/7', title: 'In progress' }] } }],
+      }) },
+    ]);
+    const server = makeServer();
+    const result = await callTool(server, 'op_list_board_lanes', { boardId: 900, includeCards: false });
+    const data = JSON.parse(result.content[0].text);
+    expect(data.type).toBe('action');
+    expect(data.actionAttribute).toBe('status');
+    expect(data.lanes[0].value).toEqual({ id: 7, title: 'In progress' });
+    expect(data.lanes[0].cards).toBeUndefined();
+  });
+});
+
 describe('computeInsertPosition', () => {
   test('empty lane → 0', () => {
     expect(computeInsertPosition([], 'bottom')).toBe(0);

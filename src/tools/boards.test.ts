@@ -328,6 +328,119 @@ describe('op_move_card (free board)', () => {
   });
 });
 
+describe('op_move_card (free board — concurrency hardening)', () => {
+  let originalFetch: typeof globalThis.fetch;
+  beforeEach(() => { originalFetch = globalThis.fetch; });
+  afterEach(() => { globalThis.fetch = originalFetch; });
+
+  // Stateful mock: maintains live order maps per query so GET-after-PATCH reflects writes,
+  // and lets a test seed a "concurrent" collider into the target after the first add PATCH.
+  function statefulFetch(opts: {
+    grid: any;
+    queryNames: Record<number, string>;
+    orders: Record<number, Record<string, number>>;
+    onTargetAdd?: (orders: Record<number, Record<string, number>>) => void;
+  }) {
+    const { grid, queryNames, orders } = opts;
+    let targetAddSeen = false;
+    return vi.fn().mockImplementation((url: string, o: any) => {
+      const method = o?.method ?? 'GET';
+      const body = o?.body ? JSON.parse(o.body) : undefined;
+      const respond = (b: unknown) => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(b)) });
+      if (method === 'GET' && /\/grids\/\d+/.test(url)) return respond(grid);
+      const om = url.match(/\/queries\/(\d+)\/order/);
+      if (om) {
+        const qid = Number(om[1]);
+        if (method === 'GET') return respond(orders[qid] ?? {});
+        if (method === 'PATCH') {
+          for (const [wp, pos] of Object.entries(body.delta as Record<string, number>)) {
+            orders[qid] = orders[qid] ?? {};
+            if (pos === -1) delete orders[qid][wp];
+            else orders[qid][wp] = pos;
+          }
+          if (!targetAddSeen && opts.onTargetAdd) { targetAddSeen = true; opts.onTargetAdd(orders); }
+          return respond({ t: 'x' });
+        }
+      }
+      const qm = url.match(/\/queries\/(\d+)/);
+      if (method === 'GET' && qm) {
+        const qid = Number(qm[1]);
+        return respond(queryHal({ id: qid, name: queryNames[qid] ?? `Q${qid}`, cards: [] }));
+      }
+      throw new Error(`No route for ${method} ${url}`);
+    });
+  }
+
+  test('clean move reports single-lane membership, no warning, not repositioned', async () => {
+    globalThis.fetch = statefulFetch({
+      grid: freeGrid,
+      queryNames: { 100: 'TODO', 101: 'IN PROGRESS' },
+      orders: { 100: { '2': 0 }, 101: {} },
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_move_card', { boardId: 847, workPackageId: 2, toLane: 101 });
+    const data = JSON.parse(result.content[0].text);
+    expect(data.lanes).toEqual(['IN PROGRESS']);
+    expect(data.repositioned).toBe(false);
+    expect(data.warning).toBeUndefined();
+  });
+
+  test('collision in target → repositions to a unique slot', async () => {
+    globalThis.fetch = statefulFetch({
+      grid: freeGrid,
+      queryNames: { 100: 'TODO', 101: 'IN PROGRESS' },
+      orders: { 100: { '2': 0 }, 101: {} },
+      onTargetAdd: (orders) => { orders[101]!['3'] = 0; }, // concurrent collider at same pos (0)
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_move_card', { boardId: 847, workPackageId: 2, toLane: 101, position: 'bottom' });
+    const data = JSON.parse(result.content[0].text);
+    expect(data.repositioned).toBe(true);
+    expect(data.lanes).toEqual(['IN PROGRESS']);
+    expect(data.warning).toBeUndefined();
+  });
+
+  test('warns when card ends up in zero lanes', async () => {
+    globalThis.fetch = statefulFetch({
+      grid: freeGrid,
+      queryNames: { 100: 'TODO', 101: 'IN PROGRESS' },
+      orders: { 100: { '2': 0 }, 101: {} },
+      onTargetAdd: (orders) => { delete orders[101]!['2']; delete orders[100]!['2']; },
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_move_card', { boardId: 847, workPackageId: 2, toLane: 101 });
+    const data = JSON.parse(result.content[0].text);
+    expect(data.lanes).toEqual([]);
+    expect(Array.isArray(data.warning)).toBe(true);
+    expect(data.warning[0]).toContain('0 lane');
+  });
+
+  test('skips source removal when the card already left the source lane', async () => {
+    const patches: { qid: number; delta: any }[] = [];
+    let order100Reads = 0;
+    globalThis.fetch = vi.fn().mockImplementation((url: string, o: any) => {
+      const method = o?.method ?? 'GET';
+      const body = o?.body ? JSON.parse(o.body) : undefined;
+      const respond = (b: unknown) => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(b)) });
+      if (method === 'GET' && url.includes('/grids/847')) return respond(freeGrid);
+      const om = url.match(/\/queries\/(\d+)\/order/);
+      if (om) {
+        const qid = Number(om[1]);
+        if (method === 'PATCH') { patches.push({ qid, delta: body.delta }); return respond({ t: 'x' }); }
+        if (qid === 100) { order100Reads++; return respond(order100Reads === 1 ? { '2': 0 } : {}); }
+        return respond({}); // query 101 (target) always empty
+      }
+      const qm = url.match(/\/queries\/(\d+)/);
+      if (method === 'GET' && qm) return respond(queryHal({ id: Number(qm[1]), name: Number(qm[1]) === 100 ? 'TODO' : 'IN PROGRESS', cards: [] }));
+      throw new Error(`No route for ${method} ${url}`);
+    });
+    const server = makeServer();
+    await callTool(server, 'op_move_card', { boardId: 847, workPackageId: 2, toLane: 101 });
+    const removeFromSource = patches.find((p) => p.qid === 100 && p.delta?.['2'] === -1);
+    expect(removeFromSource).toBeUndefined();
+  });
+});
+
 describe('op_move_card (action board)', () => {
   let originalFetch: typeof globalThis.fetch;
   beforeEach(() => { originalFetch = globalThis.fetch; });

@@ -256,23 +256,58 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
         }
 
         if (type === 'free') {
+          const wpKey = String(workPackageId);
+          const getOrder = (qid: number) => client.get<Record<string, number>>(`/queries/${qid}/order`);
+
           // Read each lane's order to find the source lane and the target's positions.
-          const orders = await Promise.all(
-            lanes.map((l) => client.get<Record<string, number>>(`/queries/${l.queryId}/order`)),
-          );
+          const orders = await Promise.all(lanes.map((l) => getOrder(l.queryId)));
           const orderByQuery = new Map(lanes.map((l, i) => [l.queryId, orders[i] ?? {}]));
-          const source = lanes.find((l) => String(workPackageId) in (orderByQuery.get(l.queryId) ?? {}));
+          const source = lanes.find((l) => wpKey in (orderByQuery.get(l.queryId) ?? {}));
 
           const targetOrder = orderByQuery.get(target.queryId) ?? {};
           const positions = Object.entries(targetOrder)
             .filter(([id]) => Number(id) !== workPackageId)
             .map(([, p]) => p);
-          const pos = computeInsertPosition(positions, position ?? 'bottom');
+          let pos = computeInsertPosition(positions, position ?? 'bottom');
 
-          // Add to target FIRST, then remove from source (never makes the card vanish).
-          await client.patch(`/queries/${target.queryId}/order`, { delta: { [String(workPackageId)]: pos } });
+          // Add to target FIRST, then remove from source (never makes the card vanish on mid-failure).
+          await client.patch(`/queries/${target.queryId}/order`, { delta: { [wpKey]: pos } });
+
+          // Verify-after-write: if a concurrent writer collided another card onto our exact
+          // position, re-position our card to a unique slot so ordering is deterministic.
+          let repositioned = false;
+          const targetAfter = await getOrder(target.queryId);
+          const myPos = targetAfter[wpKey];
+          if (myPos !== undefined) {
+            const others = Object.entries(targetAfter)
+              .filter(([id]) => id !== wpKey)
+              .map(([, p]) => p);
+            if (others.includes(myPos)) {
+              pos = resolveUniquePosition(others, myPos);
+              repositioned = true;
+              await client.patch(`/queries/${target.queryId}/order`, { delta: { [wpKey]: pos } });
+            }
+          }
+
+          // Re-check the source still holds the card before removing (a concurrent move may have
+          // already taken it — don't clobber that).
           if (source && source.queryId !== target.queryId) {
-            await client.patch(`/queries/${source.queryId}/order`, { delta: { [String(workPackageId)]: -1 } });
+            const sourceNow = await getOrder(source.queryId);
+            if (wpKey in sourceNow) {
+              await client.patch(`/queries/${source.queryId}/order`, { delta: { [wpKey]: -1 } });
+            }
+          }
+
+          // Anomaly scan: the card should end up in exactly one lane.
+          const finalOrders = await Promise.all(lanes.map((l) => getOrder(l.queryId)));
+          const inLanes = lanes.filter((l, i) => wpKey in (finalOrders[i] ?? {})).map((l) => l.name);
+          const warning: string[] = [];
+          if (inLanes.length !== 1) {
+            warning.push(
+              `Card ${workPackageId} is in ${inLanes.length} lane(s) [${inLanes.join(', ')}] after the move; ` +
+                `expected exactly 1. This indicates a concurrent move of the same card. ` +
+                (inLanes.length === 0 ? 'The card is no longer on the board.' : 'The card is duplicated across lanes.'),
+            );
           }
 
           return json({
@@ -282,6 +317,9 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
             fromLane: source?.name ?? null,
             toLane: target.name,
             position: pos,
+            repositioned,
+            lanes: inLanes,
+            ...(warning.length ? { warning } : {}),
           });
         }
 

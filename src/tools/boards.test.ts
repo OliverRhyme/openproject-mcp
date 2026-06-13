@@ -609,6 +609,86 @@ describe('op_move_card (action board — edge cases)', () => {
   });
 });
 
+describe('op_rebalance_lane', () => {
+  let originalFetch: typeof globalThis.fetch;
+  beforeEach(() => { originalFetch = globalThis.fetch; });
+  afterEach(() => { globalThis.fetch = originalFetch; });
+
+  test('rewrites positions to even gaps preserving order (pos then id)', async () => {
+    const patched: any[] = [];
+    globalThis.fetch = vi.fn().mockImplementation((url: string, o: any) => {
+      const method = o?.method ?? 'GET';
+      const body = o?.body ? JSON.parse(o.body) : undefined;
+      const respond = (b: unknown) => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(b)) });
+      if (method === 'GET' && url.includes('/grids/847')) return respond(freeGrid);
+      if (url.includes('/queries/100/order')) {
+        if (method === 'PATCH') { patched.push(body); return respond({ t: 'x' }); }
+        return respond({ '7': 0, '3': 0, '5': -8192 }); // ties + out-of-order
+      }
+      const qm = url.match(/\/queries\/(\d+)/);
+      if (method === 'GET' && qm) return respond(queryHal({ id: Number(qm[1]), name: Number(qm[1]) === 100 ? 'TODO' : 'IN PROGRESS', cards: [] }));
+      throw new Error(`No route for ${method} ${url}`);
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_rebalance_lane', { boardId: 847, lane: 'TODO' });
+    const data = JSON.parse(result.content[0].text);
+    // visual order: 5 (-8192), then 3 and 7 tied at 0 → id tiebreak 3 before 7
+    expect(data.lane).toBe('TODO');
+    expect(data.order).toEqual({ '5': 0, '3': 8192, '7': 16384 });
+    expect(patched).toHaveLength(1);
+    expect(patched[0]).toEqual({ delta: { '5': 0, '3': 8192, '7': 16384 } });
+  });
+
+  test('custom gap', async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string, o: any) => {
+      const method = o?.method ?? 'GET';
+      const respond = (b: unknown) => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(b)) });
+      if (method === 'GET' && url.includes('/grids/847')) return respond(freeGrid);
+      if (url.includes('/queries/100/order')) return respond(method === 'PATCH' ? { t: 'x' } : { '1': 5, '2': 9 });
+      const qm = url.match(/\/queries\/(\d+)/);
+      if (method === 'GET' && qm) return respond(queryHal({ id: Number(qm[1]), name: Number(qm[1]) === 100 ? 'TODO' : 'IN PROGRESS', cards: [] }));
+      throw new Error(`No route for ${method} ${url}`);
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_rebalance_lane', { boardId: 847, lane: 100, gap: 100 });
+    const data = JSON.parse(result.content[0].text);
+    expect(data.order).toEqual({ '1': 0, '2': 100 });
+  });
+
+  test('empty lane → no PATCH, empty order', async () => {
+    const patched: any[] = [];
+    globalThis.fetch = vi.fn().mockImplementation((url: string, o: any) => {
+      const method = o?.method ?? 'GET';
+      const respond = (b: unknown) => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(b)) });
+      if (method === 'GET' && url.includes('/grids/847')) return respond(freeGrid);
+      if (url.includes('/queries/100/order')) { if (method === 'PATCH') { patched.push(1); return respond({ t: 'x' }); } return respond({}); }
+      const qm = url.match(/\/queries\/(\d+)/);
+      if (method === 'GET' && qm) return respond(queryHal({ id: Number(qm[1]), name: Number(qm[1]) === 100 ? 'TODO' : 'IN PROGRESS', cards: [] }));
+      throw new Error(`No route for ${method} ${url}`);
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_rebalance_lane', { boardId: 847, lane: 'TODO' });
+    const data = JSON.parse(result.content[0].text);
+    expect(data.order).toEqual({});
+    expect(patched).toHaveLength(0);
+  });
+
+  test('unknown lane → error listing available lanes', async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string, o: any) => {
+      const method = o?.method ?? 'GET';
+      const respond = (b: unknown) => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(b)) });
+      if (method === 'GET' && url.includes('/grids/847')) return respond(freeGrid);
+      const qm = url.match(/\/queries\/(\d+)/);
+      if (method === 'GET' && qm) return respond(queryHal({ id: Number(qm[1]), name: Number(qm[1]) === 100 ? 'TODO' : 'IN PROGRESS', cards: [] }));
+      throw new Error(`No route for ${method} ${url}`);
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_rebalance_lane', { boardId: 847, lane: 'NOPE' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('TODO');
+  });
+});
+
 describe('computeInsertPosition', () => {
   test('empty lane → 0', () => {
     expect(computeInsertPosition([], 'bottom')).toBe(0);

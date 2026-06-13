@@ -371,4 +371,57 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
         });
       }),
   );
+
+  server.registerTool(
+    'op_rebalance_lane',
+    {
+      title: 'Rebalance board lane',
+      description:
+        'Rewrite a free-board lane’s manual-sort positions to clean, evenly-gapped values, ' +
+        'preserving the current visual order. Use to clean up position ties/drift from concurrent moves. ' +
+        'lane may be a lane query id or lane name (case-insensitive).',
+      inputSchema: {
+        boardId: z.number().int().positive(),
+        lane: z.union([z.string(), z.number()]).describe('Lane query id, or lane name (case-insensitive)'),
+        gap: z.number().int().positive().optional().describe('Spacing between positions (default 8192)'),
+      },
+    },
+    async ({ boardId, lane, gap }) =>
+      tryTool(async () => {
+        const grid = await client.get<HalResource>(`/grids/${boardId}`);
+        const widgets = laneWidgets(grid);
+        const resolved = await Promise.all(
+          widgets.map(async (w) => {
+            const q = await client.get<HalResource>(`/queries/${w.queryId}`);
+            return { queryId: w.queryId, name: (q.name as string | undefined) ?? null };
+          }),
+        );
+        const target = resolved.find((l) =>
+          typeof lane === 'number'
+            ? l.queryId === lane
+            : l.name?.toLowerCase() === String(lane).toLowerCase(),
+        );
+        if (!target) {
+          throw new Error(
+            `Lane "${lane}" not found on board ${boardId}. Available lanes: ` +
+              resolved.map((l) => `${l.name} (${l.queryId})`).join(', '),
+          );
+        }
+
+        const step = gap ?? POSITION_GAP;
+        const current = await client.get<Record<string, number>>(`/queries/${target.queryId}/order`);
+        // Current visual order: position asc, then id asc (OpenProject's manual-sort tiebreak).
+        const ordered = Object.entries(current).sort(
+          ([aId, aPos], [bId, bPos]) => aPos - bPos || Number(aId) - Number(bId),
+        );
+        const newOrder: Record<string, number> = {};
+        ordered.forEach(([id], i) => { newOrder[id] = i * step; });
+
+        if (ordered.length > 0) {
+          await client.patch(`/queries/${target.queryId}/order`, { delta: newOrder });
+        }
+
+        return json({ boardId, lane: target.name, queryId: target.queryId, order: newOrder });
+      }),
+  );
 }

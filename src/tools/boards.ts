@@ -274,7 +274,9 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
           await client.patch(`/queries/${target.queryId}/order`, { delta: { [wpKey]: pos } });
 
           // Verify-after-write: if a concurrent writer collided another card onto our exact
-          // position, re-position our card to a unique slot so ordering is deterministic.
+          // position, re-position our card to a unique slot. The order endpoint has no locking,
+          // so this narrows the collision window (one re-read + re-write) rather than closing it —
+          // a writer that collides after our re-read is not re-checked.
           let repositioned = false;
           const targetAfter = await getOrder(target.queryId);
           const myPos = targetAfter[wpKey];
@@ -303,10 +305,15 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
           const inLanes = lanes.filter((l, i) => wpKey in (finalOrders[i] ?? {})).map((l) => l.name);
           const warning: string[] = [];
           if (inLanes.length !== 1) {
+            const detail =
+              inLanes.length === 0
+                ? 'The card is no longer on any lane of this board.'
+                : 'The card appears in multiple lanes.';
             warning.push(
               `Card ${workPackageId} is in ${inLanes.length} lane(s) [${inLanes.join(', ')}] after the move; ` +
-                `expected exactly 1. This indicates a concurrent move of the same card. ` +
-                (inLanes.length === 0 ? 'The card is no longer on the board.' : 'The card is duplicated across lanes.'),
+                `expected exactly 1 — likely a concurrent move of the same card. ${detail} ` +
+                `Re-run op_list_board_lanes to confirm the current state, then call op_move_card again ` +
+                `(or op_rebalance_lane on the affected lane) to converge.`,
             );
           }
 

@@ -439,6 +439,39 @@ describe('op_move_card (free board — concurrency hardening)', () => {
     const removeFromSource = patches.find((p) => p.qid === 100 && p.delta?.['2'] === -1);
     expect(removeFromSource).toBeUndefined();
   });
+
+  test('warns when card ends up in two lanes (duplicate)', async () => {
+    // Card starts in NO lane, so source is undefined and no source-removal PATCH runs.
+    // A concurrent writer adds the card to lane 100 right after our add to 101, leaving it
+    // in BOTH lanes through the final anomaly scan.
+    globalThis.fetch = statefulFetch({
+      grid: freeGrid,
+      queryNames: { 100: 'TODO', 101: 'IN PROGRESS' },
+      orders: { 100: {}, 101: {} },
+      onTargetAdd: (orders) => { orders[100]!['2'] = 999; }, // concurrent duplicate into another lane
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_move_card', { boardId: 847, workPackageId: 2, toLane: 101 });
+    const data = JSON.parse(result.content[0].text);
+    expect(data.lanes.sort()).toEqual(['IN PROGRESS', 'TODO']);
+    expect(Array.isArray(data.warning)).toBe(true);
+    expect(data.warning[0]).toContain('2 lane');
+    expect(data.warning[0]).toContain('op_list_board_lanes');
+  });
+
+  test('zero-lane anomaly leaves repositioned false', async () => {
+    globalThis.fetch = statefulFetch({
+      grid: freeGrid,
+      queryNames: { 100: 'TODO', 101: 'IN PROGRESS' },
+      orders: { 100: { '2': 0 }, 101: {} },
+      onTargetAdd: (orders) => { delete orders[101]!['2']; delete orders[100]!['2']; },
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_move_card', { boardId: 847, workPackageId: 2, toLane: 101 });
+    const data = JSON.parse(result.content[0].text);
+    expect(data.repositioned).toBe(false);
+    expect(data.lanes).toEqual([]);
+  });
 });
 
 describe('op_move_card (action board)', () => {

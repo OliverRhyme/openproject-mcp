@@ -41,6 +41,20 @@ export function computeInsertPosition(
   return mid <= prev ? append() : mid; // no gap between neighbors → append
 }
 
+/**
+ * A unique position just above `pos` for a card that collided onto another card's
+ * exact position. `others` are the OTHER cards' positions in the lane (excluding the
+ * moving card). Never returns the reserved -1.
+ */
+export function resolveUniquePosition(others: number[], pos: number): number {
+  const guard = (p: number) => (p === -1 ? -2 : p);
+  const above = others.filter((p) => p > pos).sort((a, b) => a - b);
+  if (above.length === 0) return guard(pos + POSITION_GAP);
+  const next = above[0]!;
+  const mid = Math.floor((pos + next) / 2);
+  return mid > pos ? guard(mid) : guard(pos + POSITION_GAP);
+}
+
 export function boardType(grid: HalResource): 'free' | 'action' {
   const opts = grid.options as { type?: string } | undefined;
   return opts?.type === 'action' ? 'action' : 'free';

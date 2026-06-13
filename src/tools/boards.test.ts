@@ -5,6 +5,7 @@ import type { Config } from '../config.js';
 import {
   registerBoardTools,
   computeInsertPosition,
+  resolveUniquePosition,
   boardType,
   actionAttribute,
   laneWidgets,
@@ -489,6 +490,25 @@ describe('computeInsertPosition', () => {
   });
   test('adjacent neighbors with no gap → append to bottom', () => {
     expect(computeInsertPosition([0, 1], 1)).toBe(1 + 8192);
+  });
+});
+
+describe('resolveUniquePosition', () => {
+  test('inserts midpoint between collision and next card up', () => {
+    // collided at 0; next card up at 8192 → midpoint 4096
+    expect(resolveUniquePosition([8192], 0)).toBe(4096);
+  });
+  test('no card above → push above by a gap', () => {
+    expect(resolveUniquePosition([], 16384)).toBe(16384 + 8192);
+    expect(resolveUniquePosition([-8192], 16384)).toBe(16384 + 8192);
+  });
+  test('adjacent next card (no room) → escalate above by a gap', () => {
+    // collided at 0, next at 1 → no integer between → 0 + 8192
+    expect(resolveUniquePosition([1], 0)).toBe(0 + 8192);
+  });
+  test('never returns the reserved -1', () => {
+    // collided at -2, next at 0 → midpoint -1 → must escalate
+    expect(resolveUniquePosition([0], -2)).not.toBe(-1);
   });
 });
 

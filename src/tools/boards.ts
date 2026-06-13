@@ -79,6 +79,13 @@ export function laneValue(query: HalResource): LaneValue | null {
   return { id: hrefId(v), title: v.title ?? null };
 }
 
+const ATTRIBUTE_LINKS: Record<string, { rel: string; collection: string }> = {
+  status: { rel: 'status', collection: 'statuses' },
+  assignee: { rel: 'assignee', collection: 'users' },
+  version: { rel: 'version', collection: 'versions' },
+  subproject: { rel: 'project', collection: 'projects' },
+};
+
 function summarizeBoard(g: HalResource) {
   return {
     id: g.id,
@@ -188,6 +195,84 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
           actionAttribute: attr,
           lanes,
         });
+      }),
+  );
+
+  server.registerTool(
+    'op_move_card',
+    {
+      title: 'Move board card',
+      description:
+        'Move a work package into a lane of a board. Free boards: repositions via manual ordering ' +
+        '(position top/bottom/index). Action boards: changes the work package attribute the board is keyed on ' +
+        '(status/assignee/version/subproject); position is ignored. toLane may be a lane query id or lane name.',
+      inputSchema: {
+        boardId: z.number().int().positive(),
+        workPackageId: z.number().int().positive(),
+        toLane: z.union([z.string(), z.number()]).describe('Lane query id, or lane name (case-insensitive)'),
+        position: z.union([z.literal('top'), z.literal('bottom'), z.number().int().nonnegative()]).optional()
+          .describe('Free boards only. Default "bottom".'),
+        notify: z.boolean().optional().describe('Action boards: send work-package notifications (default true)'),
+      },
+    },
+    async ({ boardId, workPackageId, toLane, position, notify }) =>
+      tryTool(async () => {
+        const grid = await client.get<HalResource>(`/grids/${boardId}`);
+        const type = boardType(grid);
+        const widgets = laneWidgets(grid);
+
+        // Resolve each lane's query for name (+ value for action boards).
+        const lanes = await Promise.all(
+          widgets.map(async (w) => {
+            const q = await client.get<HalResource>(`/queries/${w.queryId}`);
+            return { queryId: w.queryId, name: (q.name as string | undefined) ?? null, query: q };
+          }),
+        );
+
+        const target = lanes.find((l) =>
+          typeof toLane === 'number'
+            ? l.queryId === toLane
+            : l.name?.toLowerCase() === String(toLane).toLowerCase(),
+        );
+        if (!target) {
+          throw new Error(
+            `Lane "${toLane}" not found on board ${boardId}. Available lanes: ` +
+              lanes.map((l) => `${l.name} (${l.queryId})`).join(', '),
+          );
+        }
+
+        if (type === 'free') {
+          // Read each lane's order to find the source lane and the target's positions.
+          const orders = await Promise.all(
+            lanes.map((l) => client.get<Record<string, number>>(`/queries/${l.queryId}/order`)),
+          );
+          const orderByQuery = new Map(lanes.map((l, i) => [l.queryId, orders[i] ?? {}]));
+          const source = lanes.find((l) => String(workPackageId) in (orderByQuery.get(l.queryId) ?? {}));
+
+          const targetOrder = orderByQuery.get(target.queryId) ?? {};
+          const positions = Object.entries(targetOrder)
+            .filter(([id]) => Number(id) !== workPackageId)
+            .map(([, p]) => p);
+          const pos = computeInsertPosition(positions, position ?? 'bottom');
+
+          // Add to target FIRST, then remove from source (never makes the card vanish).
+          await client.patch(`/queries/${target.queryId}/order`, { delta: { [String(workPackageId)]: pos } });
+          if (source && source.queryId !== target.queryId) {
+            await client.patch(`/queries/${source.queryId}/order`, { delta: { [String(workPackageId)]: -1 } });
+          }
+
+          return json({
+            moved: workPackageId,
+            boardId,
+            boardType: 'free',
+            fromLane: source?.name ?? null,
+            toLane: target.name,
+            position: pos,
+          });
+        }
+
+        // action board branch implemented in Task 6
+        throw new Error('action board move not yet implemented');
       }),
   );
 }

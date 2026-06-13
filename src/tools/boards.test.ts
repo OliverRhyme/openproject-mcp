@@ -253,6 +253,80 @@ describe('op_list_board_lanes', () => {
   });
 });
 
+describe('op_move_card (free board)', () => {
+  let originalFetch: typeof globalThis.fetch;
+  beforeEach(() => { originalFetch = globalThis.fetch; });
+  afterEach(() => { globalThis.fetch = originalFetch; });
+
+  // NOTE on route order: `/queries/100/order` contains `/queries/100`, so the
+  // more specific `/order` routes MUST come before the plain query-name routes.
+  // All GET routes are method-guarded so PATCH /order calls fall through to the
+  // capture route instead of matching a GET route.
+  function freeBoardRoutes(orders: Record<number, Record<string, number>>, patched: any[]) {
+    return [
+      { match: (u: string, m: string) => m === 'GET' && u.includes('/grids/847'), body: freeGrid },
+      { match: (u: string, m: string) => m === 'GET' && u.includes('/queries/100/order'), body: orders[100] ?? {} },
+      { match: (u: string, m: string) => m === 'GET' && u.includes('/queries/101/order'), body: orders[101] ?? {} },
+      { match: (u: string, m: string) => m === 'GET' && u.includes('/queries/100'),
+        body: queryHal({ id: 100, name: 'TODO', cards: [] }) },
+      { match: (u: string, m: string) => m === 'GET' && u.includes('/queries/101'),
+        body: queryHal({ id: 101, name: 'IN PROGRESS', cards: [] }) },
+      // capture order PATCHes
+      { match: (u: string, m: string, b: any) => m === 'PATCH' && u.includes('/order') && (patched.push({ u, b }), true),
+        body: { t: '2026-06-13T00:00:00Z' } },
+    ] as any[];
+  }
+
+  test('moves card to bottom of target, adds before removing from source', async () => {
+    const patched: any[] = [];
+    globalThis.fetch = routeFetch(freeBoardRoutes(
+      { 100: { '1': -8192, '2': 16384 }, 101: { '3': 0 } }, patched,
+    ));
+    const server = makeServer();
+    const result = await callTool(server, 'op_move_card', {
+      boardId: 847, workPackageId: 2, toLane: 'IN PROGRESS',
+    });
+    const data = JSON.parse(result.content[0].text);
+    expect(data.boardType).toBe('free');
+    expect(data.fromLane).toBe('TODO');
+    expect(data.toLane).toBe('IN PROGRESS');
+    expect(patched).toHaveLength(2);
+    expect(patched[0].u).toContain('/queries/101/order');
+    expect(patched[0].b).toEqual({ delta: { '2': 0 + 8192 } }); // bottom of [0]
+    expect(patched[1].u).toContain('/queries/100/order');
+    expect(patched[1].b).toEqual({ delta: { '2': -1 } });
+  });
+
+  test('toLane accepts a numeric query id', async () => {
+    const patched: any[] = [];
+    globalThis.fetch = routeFetch(freeBoardRoutes({ 100: { '2': 0 }, 101: {} }, patched));
+    const server = makeServer();
+    await callTool(server, 'op_move_card', { boardId: 847, workPackageId: 2, toLane: 101 });
+    expect(patched[0].u).toContain('/queries/101/order');
+    expect(patched[0].b).toEqual({ delta: { '2': 0 } }); // empty target → 0
+  });
+
+  test('card not yet on board → no source removal', async () => {
+    const patched: any[] = [];
+    globalThis.fetch = routeFetch(freeBoardRoutes({ 100: { '1': 0 }, 101: {} }, patched));
+    const server = makeServer();
+    const result = await callTool(server, 'op_move_card', { boardId: 847, workPackageId: 99, toLane: 100 });
+    const data = JSON.parse(result.content[0].text);
+    expect(data.fromLane).toBeNull();
+    expect(patched).toHaveLength(1); // only the add
+    expect(patched[0].u).toContain('/queries/100/order');
+  });
+
+  test('unknown lane → error listing available lanes', async () => {
+    globalThis.fetch = routeFetch(freeBoardRoutes({ 100: {}, 101: {} }, []));
+    const server = makeServer();
+    const result = await callTool(server, 'op_move_card', { boardId: 847, workPackageId: 2, toLane: 'NOPE' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('TODO');
+    expect(result.content[0].text).toContain('IN PROGRESS');
+  });
+});
+
 describe('computeInsertPosition', () => {
   test('empty lane → 0', () => {
     expect(computeInsertPosition([], 'bottom')).toBe(0);

@@ -34,6 +34,7 @@ export function registerRelationTools(server: McpServer, client: OpenProjectClie
     'op_list_relations',
     {
       title: 'List work package relations',
+      annotations: { readOnlyHint: true },
       description:
         'List relations for a work package. Relation types: relates, duplicates, duplicated, blocks, blocked, precedes, follows, includes, partOf, requires, required.',
       inputSchema: {
@@ -58,6 +59,7 @@ export function registerRelationTools(server: McpServer, client: OpenProjectClie
     'op_get_relation',
     {
       title: 'Get relation',
+      annotations: { readOnlyHint: true },
       description: 'Fetch a single relation by id.',
       inputSchema: {
         id: z.number().int().positive(),
@@ -75,6 +77,7 @@ export function registerRelationTools(server: McpServer, client: OpenProjectClie
     'op_create_relation',
     {
       title: 'Create relation',
+      annotations: { readOnlyHint: false, destructiveHint: false },
       description:
         'Create a relation between two work packages. Types: relates, duplicates, blocks, precedes, follows, includes, partOf, requires.',
       inputSchema: {
@@ -103,6 +106,7 @@ export function registerRelationTools(server: McpServer, client: OpenProjectClie
     'op_delete_relation',
     {
       title: 'Delete relation',
+      annotations: { readOnlyHint: false, destructiveHint: true },
       description: 'Delete a relation between work packages.',
       inputSchema: {
         id: z.number().int().positive(),

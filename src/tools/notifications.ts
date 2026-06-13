@@ -40,6 +40,7 @@ export function registerNotificationTools(server: McpServer, client: OpenProject
     'op_list_notifications',
     {
       title: 'List notifications',
+      annotations: { readOnlyHint: true },
       description:
         'List in-app notifications for the current user. ' +
         'Common filters: "readIAN" ("=" "t"/"f"), "reason" ("=" "assigned"/"mentioned"/"watched").',
@@ -72,6 +73,7 @@ export function registerNotificationTools(server: McpServer, client: OpenProject
     'op_get_notification',
     {
       title: 'Get notification',
+      annotations: { readOnlyHint: true },
       description: 'Fetch a single notification by id.',
       inputSchema: {
         id: z.number().int().positive(),
@@ -89,6 +91,7 @@ export function registerNotificationTools(server: McpServer, client: OpenProject
     'op_mark_notification_read',
     {
       title: 'Mark notification read',
+      annotations: { readOnlyHint: false, destructiveHint: false },
       description: 'Mark a single notification as read.',
       inputSchema: {
         id: z.number().int().positive(),
@@ -105,6 +108,7 @@ export function registerNotificationTools(server: McpServer, client: OpenProject
     'op_mark_all_notifications_read',
     {
       title: 'Mark all notifications read',
+      annotations: { readOnlyHint: false, destructiveHint: false },
       description: 'Mark all notifications as read for the current user.',
       inputSchema: {},
     },

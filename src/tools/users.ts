@@ -26,6 +26,7 @@ export function registerUserTools(server: McpServer, client: OpenProjectClient) 
     'op_current_user',
     {
       title: 'Current user',
+      annotations: { readOnlyHint: true },
       description: 'Return the user associated with the configured API key.',
       inputSchema: {},
     },
@@ -40,6 +41,7 @@ export function registerUserTools(server: McpServer, client: OpenProjectClient) 
     'op_list_users',
     {
       title: 'List users',
+      annotations: { readOnlyHint: true },
       description:
         'List users visible to the current API key. Supports filters such as ' +
         '"name" ("~" search), "status" ("=" "active"/"locked"/"invited"), "login" ("=" exact).',
@@ -72,6 +74,7 @@ export function registerUserTools(server: McpServer, client: OpenProjectClient) 
     'op_get_user',
     {
       title: 'Get user',
+      annotations: { readOnlyHint: true },
       description: 'Fetch a user by numeric id.',
       inputSchema: {
         id: z.number().int().positive(),

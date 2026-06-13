@@ -32,6 +32,7 @@ export function registerWorkPackageTools(server: McpServer, client: OpenProjectC
     'op_list_work_packages',
     {
       title: 'List work packages',
+      annotations: { readOnlyHint: true },
       description:
         'List work packages, optionally scoped to a project. Supports OpenProject filter syntax. ' +
         'Common filter fields: "status_id", "assignee", "project", "type", "priority", "subject" ("~" search), "updatedAt".',
@@ -73,6 +74,7 @@ export function registerWorkPackageTools(server: McpServer, client: OpenProjectC
     'op_get_work_package',
     {
       title: 'Get work package',
+      annotations: { readOnlyHint: true },
       description: 'Fetch a single work package by numeric id with full HAL detail.',
       inputSchema: {
         id: z.number().int().positive(),
@@ -94,6 +96,7 @@ export function registerWorkPackageTools(server: McpServer, client: OpenProjectC
     'op_create_work_package',
     {
       title: 'Create work package',
+      annotations: { readOnlyHint: false, destructiveHint: false },
       description:
         'Create a work package in a project. At minimum provide subject, projectId, and typeId. ' +
         'When patching dates use ISO YYYY-MM-DD strings. ',
@@ -161,6 +164,7 @@ export function registerWorkPackageTools(server: McpServer, client: OpenProjectC
     'op_update_work_package',
     {
       title: 'Update work package',
+      annotations: { readOnlyHint: false, destructiveHint: false },
       description:
         'Patch fields on a work package. You MUST pass the current lockVersion (fetch it first with op_get_work_package) ' +
         'or OpenProject will reject the update with a stale-object error.',
@@ -224,6 +228,7 @@ export function registerWorkPackageTools(server: McpServer, client: OpenProjectC
     'op_delete_work_package',
     {
       title: 'Delete work package',
+      annotations: { readOnlyHint: false, destructiveHint: true },
       description: 'Permanently delete a work package. Destructive.',
       inputSchema: { id: z.number().int().positive() },
     },
@@ -238,6 +243,7 @@ export function registerWorkPackageTools(server: McpServer, client: OpenProjectC
     'op_list_work_package_activities',
     {
       title: 'List work package activities',
+      annotations: { readOnlyHint: true },
       description:
         'List activities (comments and changes) on a work package, oldest first. Comments are truncated to 500 chars by default; use full=true for complete text.',
       inputSchema: {
@@ -271,6 +277,7 @@ export function registerWorkPackageTools(server: McpServer, client: OpenProjectC
     'op_comment_work_package',
     {
       title: 'Comment on work package',
+      annotations: { readOnlyHint: false, destructiveHint: false },
       description:
         'Add a markdown comment to a work package activity stream. ' +
         'Optionally attach a file and embed it inline using attachFilePath.',
@@ -319,6 +326,7 @@ export function registerWorkPackageTools(server: McpServer, client: OpenProjectC
     'op_count_work_packages',
     {
       title: 'Count work packages',
+      annotations: { readOnlyHint: true },
       description:
         'Return only the total count of work packages matching filters. Much cheaper than listing when you only need a number. ' +
         'Supports the same filter syntax as op_list_work_packages.',

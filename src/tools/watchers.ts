@@ -14,6 +14,7 @@ export function registerWatcherTools(server: McpServer, client: OpenProjectClien
     'op_list_watchers',
     {
       title: 'List watchers',
+      annotations: { readOnlyHint: true },
       description: 'List users watching a work package.',
       inputSchema: {
         workPackageId: z.number().int().positive(),
@@ -37,6 +38,7 @@ export function registerWatcherTools(server: McpServer, client: OpenProjectClien
     'op_add_watcher',
     {
       title: 'Add watcher',
+      annotations: { readOnlyHint: false, destructiveHint: false },
       description: 'Add a user as a watcher to a work package.',
       inputSchema: {
         workPackageId: z.number().int().positive(),
@@ -57,6 +59,7 @@ export function registerWatcherTools(server: McpServer, client: OpenProjectClien
     'op_remove_watcher',
     {
       title: 'Remove watcher',
+      annotations: { readOnlyHint: false, destructiveHint: true },
       description: 'Remove a user from watching a work package.',
       inputSchema: {
         workPackageId: z.number().int().positive(),

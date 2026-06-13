@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-An MCP server that bridges Claude (or any MCP client) to OpenProject's REST API v3. It speaks stdio JSON-RPC and exposes ~20 typed tools covering projects, work packages, users, and reference data.
+An MCP server that bridges Claude (or any MCP client) to OpenProject's REST API v3. It speaks stdio JSON-RPC and exposes ~40 typed tools covering projects, work packages, users, reference data, relations, attachments, notifications, watchers, and boards.
 
 ## Architecture
 
@@ -15,11 +15,22 @@ The code is intentionally flat. Read these files in order to understand the syst
 - `src/client.ts` — thin `fetch` wrapper. All tools go through this. Adds HTTP Basic auth (`apikey:$KEY`), serializes OpenProject's `filters`/`sortBy` JSON query params, and throws `ApiError` with `status` + parsed `body` on non-2xx.
 - `src/hal.ts` — HAL+JSON helpers. OpenProject returns hypermedia documents with `_links` and `_embedded.elements`; the `summarize*` functions collapse these into flat objects so tool output stays small. The `raw: true` input flag on most list/get tools bypasses summarization and returns the full HAL document.
 - `src/toolResult.ts` — `tryTool()` wraps every tool handler so API failures become `isError` tool responses instead of crashing the server.
-- `src/tools/{projects,workPackages,users,reference}.ts` — one `registerXTools()` function per domain; each calls `server.registerTool('op_…', { title, description, inputSchema }, handler)`.
+- `src/tools/{projects,workPackages,users,reference,relations,attachments,notifications,watchers,boards}.ts` — one `registerXTools()` function per domain; each calls `server.registerTool('op_…', { title, description, inputSchema, annotations }, handler)`. Every tool carries `annotations` (`readOnlyHint`/`destructiveHint`) — see "Tool annotations" below.
 
 ## Tool naming convention
 
 All tools are prefixed `op_` so they don't collide with other MCP servers a user has installed. Keep this prefix for any new tools.
+
+## Tool annotations
+
+Every tool **must** declare `annotations` so Claude (and the connector review process) can reason about safety:
+
+- **Read-only tools** (`op_list_*`, `op_get_*`, `op_count_*`, `op_current_user`, `op_api_passthrough`): `annotations: { readOnlyHint: true }`. Read-only tools can auto-run without a permission prompt, so this also improves UX.
+- **Writes that create/modify** (`op_create_*`, `op_update_*`, `op_comment_*`, `op_upload_*`, `op_add_*`, `op_mark_*`, `op_move_card`, `op_rebalance_lane`): `annotations: { readOnlyHint: false, destructiveHint: false }`.
+- **Destructive writes** (`op_delete_*`, `op_remove_watcher`): `annotations: { readOnlyHint: false, destructiveHint: true }` — Claude always confirms before running these.
+- `op_api_passthrough` also sets `openWorldHint: true` (freeform endpoint) and names the OpenProject API in its description, per Claude's connector review criteria.
+
+`src/annotations.test.ts` asserts the full classification and **fails if any registered tool is left unclassified** — add new tools to its READ_ONLY/WRITE/DESTRUCTIVE lists.
 
 ## Critical OpenProject semantics
 
@@ -38,6 +49,8 @@ npm run build        # compile TS → dist/
 npm run typecheck    # tsc --noEmit
 npm run dev          # tsx watch mode (no build step)
 npm start            # node dist/index.js (needs build)
+npm test             # vitest run (full suite)
+npm run test:watch   # vitest watch mode
 ```
 
 Smoke test without a real OpenProject instance — confirms the server boots and lists tools:
@@ -51,7 +64,7 @@ OPENPROJECT_BASE_URL=https://example.openproject.com OPENPROJECT_API_KEY=fake \
 EOF
 ```
 
-There is no test suite yet. End-to-end testing requires hitting a real OpenProject instance with a valid API token (`community.openproject.org` works for read-only smoke checks against public projects).
+There is a vitest unit suite (`npm test`) covering every tool module, the client, HAL helpers, config, and tool annotations — `fetch` is mocked, so it runs offline. End-to-end testing still requires hitting a real OpenProject instance with a valid API token (`community.openproject.org` works for read-only smoke checks against public projects).
 
 ## Output optimization
 
@@ -69,11 +82,12 @@ When adding new list tools, follow these patterns: accept `fields` and `pageSize
 ## Adding a new tool
 
 1. Pick the domain file under `src/tools/` (or create one and import it from `src/index.ts`).
-2. Inside the `registerXTools(server, client)` function, call `server.registerTool(name, { title, description, inputSchema }, handler)`.
-3. `inputSchema` is an **object of zod fields**, not a zod object — the SDK wraps it. Use `z.string()`, `z.number().int().positive()`, etc.
-4. Wrap the handler body in `tryTool(async () => { ... return json(...) })` so errors surface as structured tool errors instead of crashing the transport.
-5. For list endpoints, accept the shared filter/sortBy/pageSize inputs and pass them through `client.get(path, params)`; the client serializes them.
-6. Return a `summarize*` view by default and provide a `raw: boolean` input for callers who need the full HAL document.
+2. Inside the `registerXTools(server, client)` function, call `server.registerTool(name, { title, description, inputSchema, annotations }, handler)`.
+3. Set `annotations` (`readOnlyHint`/`destructiveHint`, plus `openWorldHint` for freeform endpoints) per the "Tool annotations" section, and add the new tool to the matching list in `src/annotations.test.ts` (its "every registered tool is classified" test will fail otherwise).
+4. `inputSchema` is an **object of zod fields**, not a zod object — the SDK wraps it. Use `z.string()`, `z.number().int().positive()`, etc.
+5. Wrap the handler body in `tryTool(async () => { ... return json(...) })` so errors surface as structured tool errors instead of crashing the transport.
+6. For list endpoints, accept the shared filter/sortBy/pageSize inputs and pass them through `client.get(path, params)`; the client serializes them.
+7. Return a `summarize*` view by default and provide a `raw: boolean` input for callers who need the full HAL document.
 
 ## Dependency notes
 

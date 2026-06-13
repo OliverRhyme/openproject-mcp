@@ -38,6 +38,7 @@ export function registerProjectTools(server: McpServer, client: OpenProjectClien
     'op_list_projects',
     {
       title: 'List projects',
+      annotations: { readOnlyHint: true },
       description:
         'List OpenProject projects visible to the API key. Supports OpenProject filter syntax. ' +
         'Common fields: "active" ("=" true/false), "name_and_identifier" ("~" substring), "parent_id" ("=" id).',
@@ -65,6 +66,7 @@ export function registerProjectTools(server: McpServer, client: OpenProjectClien
     'op_get_project',
     {
       title: 'Get project',
+      annotations: { readOnlyHint: true },
       description: 'Get a single project by numeric id or identifier slug.',
       inputSchema: {
         idOrIdentifier: z.string().describe('Project numeric id (e.g. "42") or identifier slug'),
@@ -84,6 +86,7 @@ export function registerProjectTools(server: McpServer, client: OpenProjectClien
     'op_create_project',
     {
       title: 'Create project',
+      annotations: { readOnlyHint: false, destructiveHint: false },
       description:
         'Create a new project. Requires admin or "add project" permission. ' +
         'Pass either a parent identifier or numeric id via _links.parent.href if creating a sub-project.',
@@ -119,6 +122,7 @@ export function registerProjectTools(server: McpServer, client: OpenProjectClien
     'op_update_project',
     {
       title: 'Update project',
+      annotations: { readOnlyHint: false, destructiveHint: false },
       description:
         'Patch an existing project. Only include the fields you want to change.',
       inputSchema: {
@@ -148,6 +152,7 @@ export function registerProjectTools(server: McpServer, client: OpenProjectClien
     'op_delete_project',
     {
       title: 'Delete project',
+      annotations: { readOnlyHint: false, destructiveHint: true },
       description:
         'Delete a project. Destructive; requires admin permission. The deletion is processed asynchronously by OpenProject.',
       inputSchema: {
@@ -165,6 +170,7 @@ export function registerProjectTools(server: McpServer, client: OpenProjectClien
     'op_count_projects',
     {
       title: 'Count projects',
+      annotations: { readOnlyHint: true },
       description:
         'Return only the total count of projects matching filters. Much cheaper than listing when you only need a number.',
       inputSchema: {

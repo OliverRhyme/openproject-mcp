@@ -23,6 +23,7 @@ export function registerReferenceTools(server: McpServer, client: OpenProjectCli
     'op_list_types',
     {
       title: 'List work package types',
+      annotations: { readOnlyHint: true },
       description:
         'List work package types (Task, Bug, Feature, Milestone, etc.). Optionally scope to a project.',
       inputSchema: {
@@ -46,6 +47,7 @@ export function registerReferenceTools(server: McpServer, client: OpenProjectCli
     'op_list_statuses',
     {
       title: 'List statuses',
+      annotations: { readOnlyHint: true },
       description: 'List all work package statuses defined on the instance.',
       inputSchema: {},
     },
@@ -63,6 +65,7 @@ export function registerReferenceTools(server: McpServer, client: OpenProjectCli
     'op_list_priorities',
     {
       title: 'List priorities',
+      annotations: { readOnlyHint: true },
       description: 'List all priorities defined on the instance.',
       inputSchema: {},
     },
@@ -80,6 +83,7 @@ export function registerReferenceTools(server: McpServer, client: OpenProjectCli
     'op_list_versions',
     {
       title: 'List versions (milestones)',
+      annotations: { readOnlyHint: true },
       description: 'List versions, optionally filtered to a project.',
       inputSchema: {
         projectIdOrIdentifier: z.string().optional(),
@@ -109,9 +113,11 @@ export function registerReferenceTools(server: McpServer, client: OpenProjectCli
     'op_api_passthrough',
     {
       title: 'Raw API passthrough',
+      annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'Escape hatch: call any GET endpoint under /api/v3 directly. Path should start with "/" (e.g. "/queries/42"). ' +
-        'Use sparingly — prefer the typed tools above.',
+        'Escape hatch: call any GET endpoint on the OpenProject REST API v3 (paths under /api/v3) directly. ' +
+        'Path should start with "/" (e.g. "/queries/42"). Use sparingly — prefer the typed tools above. ' +
+        'See the OpenProject API docs at https://www.openproject.org/docs/api/.',
       inputSchema: {
         path: z
           .string()

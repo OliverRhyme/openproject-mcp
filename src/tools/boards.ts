@@ -154,6 +154,7 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
     'op_list_boards',
     {
       title: 'List boards',
+      annotations: { readOnlyHint: true },
       description:
         'List boards (Kanban-style) for a project. Boards are stored as grids scoped to /projects/{id}/boards.',
       inputSchema: {
@@ -181,6 +182,7 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
     'op_get_board',
     {
       title: 'Get board',
+      annotations: { readOnlyHint: true },
       description: 'Fetch a single board (grid) by id, including its widget/column configuration.',
       inputSchema: {
         id: z.number().int().positive(),
@@ -198,6 +200,7 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
     'op_list_board_lanes',
     {
       title: 'List board lanes',
+      annotations: { readOnlyHint: true },
       description:
         'List the lanes (columns) of a board with each lane’s name, backing query id, card count, and cards. ' +
         'Works for free and action boards. For action boards each lane includes the attribute value it represents.',
@@ -253,6 +256,7 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
     'op_move_card',
     {
       title: 'Move board card',
+      annotations: { readOnlyHint: false, destructiveHint: false },
       description:
         'Move a work package into a lane of a board. Free boards: repositions via manual ordering ' +
         '(position top/bottom/index). Action boards: changes the work package attribute the board is keyed on ' +
@@ -397,6 +401,7 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
     'op_rebalance_lane',
     {
       title: 'Rebalance board lane',
+      annotations: { readOnlyHint: false, destructiveHint: false },
       description:
         'Rewrite a free-board lane’s manual-sort positions to clean, evenly-gapped values, ' +
         'preserving the current visual order. Use to clean up position ties/drift from concurrent moves. ' +

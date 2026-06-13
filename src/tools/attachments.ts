@@ -85,6 +85,7 @@ export function registerAttachmentTools(server: McpServer, client: OpenProjectCl
     'op_list_attachments',
     {
       title: 'List attachments',
+      annotations: { readOnlyHint: true },
       description: 'List attachments on a work package.',
       inputSchema: {
         workPackageId: z.number().int().positive(),
@@ -108,6 +109,7 @@ export function registerAttachmentTools(server: McpServer, client: OpenProjectCl
     'op_get_attachment',
     {
       title: 'Get attachment',
+      annotations: { readOnlyHint: true },
       description:
         'Fetch attachment metadata by id. Set saveTo to download the file content to a local path ' +
         'and also return embedLocations showing where the file is referenced in the work package ' +
@@ -161,6 +163,7 @@ export function registerAttachmentTools(server: McpServer, client: OpenProjectCl
     'op_upload_attachment',
     {
       title: 'Upload attachment',
+      annotations: { readOnlyHint: false, destructiveHint: false },
       description:
         'Upload a file from the local filesystem as an attachment on a work package. ' +
         'Provide the absolute path to the file. Optionally override the file name. ' +
@@ -243,6 +246,7 @@ export function registerAttachmentTools(server: McpServer, client: OpenProjectCl
     'op_delete_attachment',
     {
       title: 'Delete attachment',
+      annotations: { readOnlyHint: false, destructiveHint: true },
       description: 'Delete an attachment. Destructive.',
       inputSchema: {
         id: z.number().int().positive(),

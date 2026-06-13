@@ -52,6 +52,90 @@ const gridHal = {
   },
 };
 
+// Routes each fetch call to a matching response by url + method.
+type Route = {
+  match: (url: string, method: string, body: any) => boolean;
+  status?: number;
+  body: unknown;
+};
+function routeFetch(routes: Route[]) {
+  return vi.fn().mockImplementation((url: string, opts: any) => {
+    const method = (opts?.method ?? 'GET') as string;
+    const body =
+      opts?.body && typeof opts.body === 'string' ? JSON.parse(opts.body) : undefined;
+    const route = routes.find((r) => r.match(url, method, body));
+    if (!route) throw new Error(`No route for ${method} ${url}`);
+    const status = route.status ?? 200;
+    return Promise.resolve({
+      ok: status >= 200 && status < 300,
+      status,
+      text: () => Promise.resolve(JSON.stringify(route.body)),
+    });
+  });
+}
+
+function wpHal(id: number, subject: string, extra: Record<string, unknown> = {}) {
+  return {
+    id,
+    subject,
+    lockVersion: 3,
+    _links: { status: { href: '/api/v3/statuses/1', title: 'New' } },
+    ...extra,
+  };
+}
+
+function queryHal(opts: {
+  id: number;
+  name: string;
+  cards: any[];
+  total?: number;
+  extraFilters?: any[];
+}) {
+  return {
+    id: opts.id,
+    name: opts.name,
+    filters: [
+      {
+        _type: 'ManualSortQueryFilter',
+        _links: { filter: { href: '/api/v3/queries/filters/manualSort' }, values: [] },
+      },
+      ...(opts.extraFilters ?? []),
+    ],
+    _embedded: {
+      results: {
+        total: opts.total ?? opts.cards.length,
+        count: opts.cards.length,
+        pageSize: 20,
+        offset: 1,
+        _embedded: { elements: opts.cards },
+      },
+    },
+    _links: {
+      updateOrderedWorkPackages: { href: `/api/v3/queries/${opts.id}/order`, method: 'put' },
+    },
+  };
+}
+
+const freeGrid = {
+  id: 847,
+  name: 'Issues',
+  options: { type: 'free', filters: [], highlightingMode: 'priority' },
+  widgets: [
+    { identifier: 'work_package_query', startColumn: 2, options: { queryId: 101 } },
+    { identifier: 'work_package_query', startColumn: 1, options: { queryId: 100 } },
+  ],
+  _links: { scope: { href: '/projects/asenso-mobile-v3/boards' } },
+};
+
+const actionGrid = {
+  id: 900,
+  name: 'Status board',
+  options: { type: 'action', attribute: 'status' },
+  widgets: [
+    { identifier: 'work_package_query', startColumn: 1, options: { queryId: 200 } },
+  ],
+};
+
 describe('registerBoardTools', () => {
   let originalFetch: typeof globalThis.fetch;
 

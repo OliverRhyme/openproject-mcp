@@ -327,6 +327,66 @@ describe('op_move_card (free board)', () => {
   });
 });
 
+describe('op_move_card (action board)', () => {
+  let originalFetch: typeof globalThis.fetch;
+  beforeEach(() => { originalFetch = globalThis.fetch; });
+  afterEach(() => { globalThis.fetch = originalFetch; });
+
+  const actionQuery = queryHal({
+    id: 200, name: 'In progress', cards: [],
+    extraFilters: [{ _type: 'StatusQueryFilter', _links: {
+      filter: { href: '/api/v3/queries/filters/status' },
+      values: [{ href: '/api/v3/statuses/7', title: 'In progress' }] } }],
+  });
+
+  test('changes the work package status link with current lockVersion', async () => {
+    const patched: any[] = [];
+    globalThis.fetch = routeFetch([
+      { match: (u, m) => m === 'GET' && u.includes('/grids/900'), body: actionGrid },
+      { match: (u) => u.includes('/queries/200') && !u.includes('/order'), body: actionQuery },
+      { match: (u, m) => m === 'GET' && u.includes('/work_packages/5'), body: wpHal(5, 'X', { lockVersion: 11 }) },
+      { match: (u, m, b) => m === 'PATCH' && u.includes('/work_packages/5') && (patched.push(b), true),
+        body: wpHal(5, 'X', { lockVersion: 12 }) },
+    ]);
+    const server = makeServer();
+    const result = await callTool(server, 'op_move_card', { boardId: 900, workPackageId: 5, toLane: 'In progress' });
+    const data = JSON.parse(result.content[0].text);
+    expect(data.boardType).toBe('action');
+    expect(data.toLane).toBe('In progress');
+    expect(patched[0]).toEqual({
+      lockVersion: 11,
+      _links: { status: { href: '/api/v3/statuses/7' } },
+    });
+  });
+
+  test('retries once on 409 with a fresh lockVersion', async () => {
+    const patched: any[] = [];
+    let wpVersion = 11;
+    let patchCount = 0;
+    globalThis.fetch = vi.fn().mockImplementation((url: string, opts: any) => {
+      const method = opts?.method ?? 'GET';
+      const respond = (status: number, body: unknown) =>
+        Promise.resolve({ ok: status >= 200 && status < 300, status, text: () => Promise.resolve(JSON.stringify(body)) });
+      if (method === 'GET' && url.includes('/grids/900')) return respond(200, actionGrid);
+      if (url.includes('/queries/200') && !url.includes('/order')) return respond(200, actionQuery);
+      if (method === 'GET' && url.includes('/work_packages/5')) return respond(200, wpHal(5, 'X', { lockVersion: wpVersion }));
+      if (method === 'PATCH' && url.includes('/work_packages/5')) {
+        patchCount++;
+        patched.push(JSON.parse(opts.body));
+        if (patchCount === 1) { wpVersion = 12; return respond(409, { _type: 'Error', message: 'stale' }); }
+        return respond(200, wpHal(5, 'X', { lockVersion: 13 }));
+      }
+      throw new Error(`No route for ${method} ${url}`);
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_move_card', { boardId: 900, workPackageId: 5, toLane: 200 });
+    expect(result.isError).toBeUndefined();
+    expect(patchCount).toBe(2);
+    expect(patched[0].lockVersion).toBe(11);
+    expect(patched[1].lockVersion).toBe(12); // refetched
+  });
+});
+
 describe('computeInsertPosition', () => {
   test('empty lane → 0', () => {
     expect(computeInsertPosition([], 'bottom')).toBe(0);

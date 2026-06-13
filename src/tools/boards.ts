@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { OpenProjectClient } from '../client.js';
+import { OpenProjectClient, type ApiError } from '../client.js';
 import {
   extractElements,
   hrefId,
@@ -271,8 +271,45 @@ export function registerBoardTools(server: McpServer, client: OpenProjectClient)
           });
         }
 
-        // action board branch implemented in Task 6
-        throw new Error('action board move not yet implemented');
+        // Action board: move = set the work package's attribute to the target lane's value.
+        const attr = actionAttribute(grid);
+        const mapping = attr ? ATTRIBUTE_LINKS[attr] : undefined;
+        if (!attr || !mapping) {
+          throw new Error(`Unsupported action board attribute: ${attr ?? 'unknown'}`);
+        }
+        const value = laneValue(target.query);
+        if (value?.id == null) {
+          throw new Error(`Could not determine target value for lane "${target.name}"`);
+        }
+        const href = `/api/v3/${mapping.collection}/${value.id}`;
+        const suffix = notify === false ? '?notify=false' : '';
+
+        const patchOnce = async () => {
+          const wp = await client.get<HalResource>(`/work_packages/${workPackageId}`);
+          return client.patch<HalResource>(`/work_packages/${workPackageId}${suffix}`, {
+            lockVersion: wp.lockVersion,
+            _links: { [mapping.rel]: { href } },
+          });
+        };
+
+        try {
+          await patchOnce();
+        } catch (err) {
+          if ((err as ApiError).status === 409) {
+            await patchOnce(); // retry once with a fresh lockVersion
+          } else {
+            throw err;
+          }
+        }
+
+        return json({
+          moved: workPackageId,
+          boardId,
+          boardType: 'action',
+          attribute: attr,
+          toLane: target.name,
+          value,
+        });
       }),
   );
 }

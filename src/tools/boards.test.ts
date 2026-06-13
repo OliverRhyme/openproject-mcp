@@ -387,6 +387,81 @@ describe('op_move_card (action board)', () => {
   });
 });
 
+describe('op_move_card (action board — edge cases)', () => {
+  let originalFetch: typeof globalThis.fetch;
+  beforeEach(() => { originalFetch = globalThis.fetch; });
+  afterEach(() => { globalThis.fetch = originalFetch; });
+
+  const statusQuery = queryHal({
+    id: 200, name: 'In progress', cards: [],
+    extraFilters: [{ _type: 'StatusQueryFilter', _links: {
+      filter: { href: '/api/v3/queries/filters/status' },
+      values: [{ href: '/api/v3/statuses/7', title: 'In progress' }] } }],
+  });
+
+  test('appends ?notify=false to the work package PATCH when notify:false', async () => {
+    const calls: { url: string; method: string }[] = [];
+    globalThis.fetch = vi.fn().mockImplementation((url: string, opts: any) => {
+      const method = opts?.method ?? 'GET';
+      calls.push({ url, method });
+      const respond = (b: unknown) => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(b)) });
+      if (url.includes('/grids/900')) return respond(actionGrid);
+      if (url.includes('/queries/200') && !url.includes('/order')) return respond(statusQuery);
+      if (url.includes('/work_packages/5')) return respond(wpHal(5, 'X', { lockVersion: 11 }));
+      throw new Error(`No route for ${method} ${url}`);
+    });
+    const server = makeServer();
+    await callTool(server, 'op_move_card', { boardId: 900, workPackageId: 5, toLane: 200, notify: false });
+    const patchCall = calls.find((c) => c.method === 'PATCH' && c.url.includes('/work_packages/5'));
+    expect(patchCall).toBeDefined();
+    expect(patchCall!.url).toContain('notify=false');
+  });
+
+  test('unsupported action attribute → error', async () => {
+    const weirdGrid = { id: 901, name: 'Weird', options: { type: 'action', attribute: 'category' },
+      widgets: [{ identifier: 'work_package_query', startColumn: 1, options: { queryId: 200 } }] };
+    globalThis.fetch = routeFetch([
+      { match: (u, m) => m === 'GET' && u.includes('/grids/901'), body: weirdGrid },
+      { match: (u) => u.includes('/queries/200') && !u.includes('/order'), body: statusQuery },
+    ]);
+    const server = makeServer();
+    const result = await callTool(server, 'op_move_card', { boardId: 901, workPackageId: 5, toLane: 200 });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('category');
+  });
+
+  test('lane with no resolvable value → error', async () => {
+    // query with only the manualSort filter → laneValue returns null
+    const valuelessQuery = queryHal({ id: 200, name: 'In progress', cards: [] });
+    globalThis.fetch = routeFetch([
+      { match: (u, m) => m === 'GET' && u.includes('/grids/900'), body: actionGrid },
+      { match: (u) => u.includes('/queries/200') && !u.includes('/order'), body: valuelessQuery },
+    ]);
+    const server = makeServer();
+    const result = await callTool(server, 'op_move_card', { boardId: 900, workPackageId: 5, toLane: 200 });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('In progress');
+  });
+
+  test('a second 409 propagates as an error (only one retry)', async () => {
+    let patchCount = 0;
+    globalThis.fetch = vi.fn().mockImplementation((url: string, opts: any) => {
+      const method = opts?.method ?? 'GET';
+      const respond = (status: number, b: unknown) =>
+        Promise.resolve({ ok: status >= 200 && status < 300, status, text: () => Promise.resolve(JSON.stringify(b)) });
+      if (url.includes('/grids/900')) return respond(200, actionGrid);
+      if (url.includes('/queries/200') && !url.includes('/order')) return respond(200, statusQuery);
+      if (method === 'GET' && url.includes('/work_packages/5')) return respond(200, wpHal(5, 'X', { lockVersion: 11 }));
+      if (method === 'PATCH' && url.includes('/work_packages/5')) { patchCount++; return respond(409, { _type: 'Error', message: 'stale' }); }
+      throw new Error(`No route for ${method} ${url}`);
+    });
+    const server = makeServer();
+    const result = await callTool(server, 'op_move_card', { boardId: 900, workPackageId: 5, toLane: 200 });
+    expect(result.isError).toBe(true);
+    expect(patchCount).toBe(2); // initial + one retry, then gives up
+  });
+});
+
 describe('computeInsertPosition', () => {
   test('empty lane → 0', () => {
     expect(computeInsertPosition([], 'bottom')).toBe(0);

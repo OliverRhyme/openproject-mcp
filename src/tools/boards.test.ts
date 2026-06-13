@@ -2,7 +2,14 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { OpenProjectClient } from '../client.js';
 import type { Config } from '../config.js';
-import { registerBoardTools, computeInsertPosition } from './boards.js';
+import {
+  registerBoardTools,
+  computeInsertPosition,
+  boardType,
+  actionAttribute,
+  laneWidgets,
+  laneValue,
+} from './boards.js';
 
 const config: Config = {
   baseUrl: 'https://op.example.com',
@@ -208,5 +215,42 @@ describe('computeInsertPosition', () => {
   });
   test('adjacent neighbors with no gap → append to bottom', () => {
     expect(computeInsertPosition([0, 1], 1)).toBe(1 + 8192);
+  });
+});
+
+describe('board metadata helpers', () => {
+  test('boardType reads options.type, defaulting to free', () => {
+    expect(boardType(freeGrid as any)).toBe('free');
+    expect(boardType(actionGrid as any)).toBe('action');
+    expect(boardType({ options: {} } as any)).toBe('free');
+  });
+  test('actionAttribute is null for free boards, attribute for action', () => {
+    expect(actionAttribute(freeGrid as any)).toBeNull();
+    expect(actionAttribute(actionGrid as any)).toBe('status');
+  });
+  test('laneWidgets keeps query widgets sorted by startColumn', () => {
+    const lanes = laneWidgets(freeGrid as any);
+    expect(lanes.map((l) => l.queryId)).toEqual([100, 101]); // 100 is startColumn 1
+  });
+  test('laneValue returns first non-manualSort filter value', () => {
+    const q = queryHal({
+      id: 200,
+      name: 'In progress',
+      cards: [],
+      extraFilters: [
+        {
+          _type: 'StatusQueryFilter',
+          _links: {
+            filter: { href: '/api/v3/queries/filters/status' },
+            values: [{ href: '/api/v3/statuses/7', title: 'In progress' }],
+          },
+        },
+      ],
+    });
+    expect(laneValue(q as any)).toEqual({ id: 7, title: 'In progress' });
+  });
+  test('laneValue is null when only manualSort filter present', () => {
+    const q = queryHal({ id: 100, name: 'TODO', cards: [] });
+    expect(laneValue(q as any)).toBeNull();
   });
 });

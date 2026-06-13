@@ -3,7 +3,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { OpenProjectClient } from '../client.js';
 import {
   extractElements,
+  hrefId,
   paginationMeta,
+  pickFields,
+  summarizeWorkPackage,
   type HalCollection,
   type HalResource,
 } from '../hal.js';
@@ -36,6 +39,44 @@ export function computeInsertPosition(
   const next = sorted[k]!;
   const mid = Math.floor((prev + next) / 2);
   return mid <= prev ? append() : mid; // no gap between neighbors → append
+}
+
+export function boardType(grid: HalResource): 'free' | 'action' {
+  const opts = grid.options as { type?: string } | undefined;
+  return opts?.type === 'action' ? 'action' : 'free';
+}
+
+export function actionAttribute(grid: HalResource): string | null {
+  if (boardType(grid) !== 'action') return null;
+  const opts = grid.options as { attribute?: string } | undefined;
+  return opts?.attribute ?? null;
+}
+
+export interface LaneWidget {
+  queryId: number;
+  startColumn: number;
+}
+
+export function laneWidgets(grid: HalResource): LaneWidget[] {
+  const widgets = (grid.widgets as any[]) ?? [];
+  return widgets
+    .filter((w) => w?.identifier === 'work_package_query' && w?.options?.queryId != null)
+    .map((w) => ({ queryId: Number(w.options.queryId), startColumn: Number(w.startColumn ?? 0) }))
+    .sort((a, b) => a.startColumn - b.startColumn);
+}
+
+export interface LaneValue {
+  id: number | string | null;
+  title: string | null;
+}
+
+/** The attribute value an action-board lane represents: the first non-manualSort filter's first value. */
+export function laneValue(query: HalResource): LaneValue | null {
+  const filters = (query.filters as any[]) ?? [];
+  const attr = filters.find((f) => f?._type !== 'ManualSortQueryFilter');
+  const v = attr?._links?.values?.[0];
+  if (!v) return null;
+  return { id: hrefId(v), title: v.title ?? null };
 }
 
 function summarizeBoard(g: HalResource) {

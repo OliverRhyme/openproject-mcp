@@ -9,6 +9,35 @@ import {
 } from '../hal.js';
 import { json, tryTool } from '../toolResult.js';
 
+const POSITION_GAP = 8192;
+
+/**
+ * Integer position for inserting a card into a free-board lane.
+ * `positions` are the EXISTING positions in the target lane, excluding the moving card.
+ * Position -1 is reserved by OpenProject for removal, so it is never returned.
+ */
+export function computeInsertPosition(
+  positions: number[],
+  position: 'top' | 'bottom' | number,
+): number {
+  if (positions.length === 0) return 0;
+  const sorted = [...positions].sort((a, b) => a - b);
+  const guardTop = (p: number) => (p === -1 ? -2 : p);
+  const append = () => sorted[sorted.length - 1]! + POSITION_GAP;
+  const prepend = () => guardTop(sorted[0]! - POSITION_GAP);
+
+  if (position === 'bottom') return append();
+  if (position === 'top') return prepend();
+
+  const k = Math.max(0, Math.min(position, sorted.length));
+  if (k === 0) return prepend();
+  if (k >= sorted.length) return append();
+  const prev = sorted[k - 1]!;
+  const next = sorted[k]!;
+  const mid = Math.floor((prev + next) / 2);
+  return mid <= prev ? append() : mid; // no gap between neighbors → append
+}
+
 function summarizeBoard(g: HalResource) {
   return {
     id: g.id,

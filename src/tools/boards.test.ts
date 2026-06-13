@@ -2,7 +2,7 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { OpenProjectClient } from '../client.js';
 import type { Config } from '../config.js';
-import { registerBoardTools } from './boards.js';
+import { registerBoardTools, computeInsertPosition } from './boards.js';
 
 const config: Config = {
   baseUrl: 'https://op.example.com',
@@ -178,5 +178,35 @@ describe('registerBoardTools', () => {
     expect(data.id).toBe(3);
     expect(data.name).toBe('Sprint Board');
     expect(data.widgets).toHaveLength(1);
+  });
+});
+
+describe('computeInsertPosition', () => {
+  test('empty lane → 0', () => {
+    expect(computeInsertPosition([], 'bottom')).toBe(0);
+    expect(computeInsertPosition([], 'top')).toBe(0);
+    expect(computeInsertPosition([], 5)).toBe(0);
+  });
+  test('bottom → max + 8192', () => {
+    expect(computeInsertPosition([-8192, 16384], 'bottom')).toBe(16384 + 8192);
+  });
+  test('top → min - 8192', () => {
+    expect(computeInsertPosition([0, 8192], 'top')).toBe(-8192);
+  });
+  test('top guards the reserved -1 sentinel', () => {
+    // min 8191 → 8191-8192 = -1 → must become -2
+    expect(computeInsertPosition([8191], 'top')).toBe(-2);
+  });
+  test('numeric index inserts at midpoint between neighbors', () => {
+    expect(computeInsertPosition([0, 8192], 1)).toBe(4096);
+  });
+  test('numeric index 0 → before first', () => {
+    expect(computeInsertPosition([0, 8192], 0)).toBe(-8192);
+  });
+  test('numeric index past end → append', () => {
+    expect(computeInsertPosition([0, 8192], 9)).toBe(8192 + 8192);
+  });
+  test('adjacent neighbors with no gap → append to bottom', () => {
+    expect(computeInsertPosition([0, 1], 1)).toBe(1 + 8192);
   });
 });
